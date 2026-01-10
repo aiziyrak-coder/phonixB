@@ -150,14 +150,44 @@ def register(request):
         serializer = RegisterSerializer(data=data)
         
         if serializer.is_valid():
-            user = serializer.save()
-            refresh = RefreshToken.for_user(user)
-            logger.info(f"✅ User registered successfully: {user.phone}, {user.email}")
-            return Response({
-                'user': UserSerializer(user, context={'request': request}).data,
-                'refresh': str(refresh),
-                'access': str(refresh.access_token),
-            }, status=status.HTTP_201_CREATED)
+            try:
+                user = serializer.save()
+                refresh = RefreshToken.for_user(user)
+                logger.info(f"✅ User registered successfully: {user.phone}, {user.email}")
+                return Response({
+                    'user': UserSerializer(user, context={'request': request}).data,
+                    'refresh': str(refresh),
+                    'access': str(refresh.access_token),
+                }, status=status.HTTP_201_CREATED)
+            except Exception as db_error:
+                import traceback
+                from django.db import IntegrityError
+                error_trace = traceback.format_exc()
+                logger.error(f"❌ Database error during registration: {str(db_error)}")
+                logger.error(f"Traceback: {error_trace}")
+                
+                # Handle unique constraint violations
+                if isinstance(db_error, IntegrityError):
+                    error_msg = str(db_error)
+                    if 'phone' in error_msg.lower() or 'users_user.phone' in error_msg:
+                        return Response({
+                            'phone': ['Bu telefon raqam allaqachon ro\'yxatdan o\'tgan']
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                    elif 'email' in error_msg.lower() or 'users_user.email' in error_msg:
+                        return Response({
+                            'email': ['Bu email allaqachon ro\'yxatdan o\'tgan']
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                    else:
+                        return Response({
+                            'detail': 'Bu ma\'lumotlar allaqachon mavjud',
+                            'error': error_msg
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                else:
+                    return Response({
+                        'detail': 'Registration failed',
+                        'error': str(db_error),
+                        'error_type': type(db_error).__name__
+                    }, status=status.HTTP_400_BAD_REQUEST)
         
         logger.warning(f"❌ Registration validation failed: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
