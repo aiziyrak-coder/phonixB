@@ -62,32 +62,56 @@ source venv/bin/activate
 pip install --upgrade pip -q
 pip install --upgrade setuptools wheel -q
 
-# Create temporary requirements without Pillow and debug toolbar (optional packages)
-echo "📦 Preparing requirements..."
-grep -v "^Pillow" requirements.txt | grep -v "^#" | grep -v "^$" | grep -v "django-debug-toolbar" > requirements_temp.txt || cp requirements.txt requirements_temp.txt
+# Install core packages step by step to avoid conflicts (Python 3.13 compatible)
+echo "📦 Installing dependencies step by step..."
 
-# Install requirements without Pillow first
-echo "📦 Installing dependencies (without Pillow)..."
-pip install -r requirements_temp.txt -q
+# Core Django packages first
+echo "  → Installing Django core..."
+pip install "Django>=5.0.0" -q || pip install Django==5.0.1 -q
+pip install "djangorestframework>=3.14.0" -q || pip install djangorestframework==3.14.0 -q
+pip install "djangorestframework-simplejwt>=5.3.0" -q || pip install djangorestframework-simplejwt==5.3.1 -q
 
-# Install Pillow separately with workaround for Python 3.13
-echo "📦 Installing Pillow (Python 3.13 compatible version)..."
+# Database packages
+echo "  → Installing database packages..."
+pip install "psycopg2-binary>=2.9.0" -q || pip install psycopg2-binary==2.9.9 -q
+pip install "dj-database-url>=2.1.0" -q || pip install dj-database-url==2.1.0 -q
+
+# Essential packages
+echo "  → Installing essential packages..."
+pip install "django-cors-headers>=4.3.0" -q || pip install django-cors-headers==4.3.1 -q
+pip install "python-dotenv>=1.0.0" -q || pip install python-dotenv==1.0.0 -q
+pip install "django-cleanup>=8.0.0" -q || echo "  ⚠️  django-cleanup skipped"
+
+# API and utilities
+echo "  → Installing API packages..."
+pip install "requests>=2.31.0" -q || pip install requests==2.31.0 -q
+pip install "google-generativeai>=0.3.0" -q || echo "  ⚠️  google-generativeai skipped"
+pip install "django-phonenumber-field>=7.3.0" -q || echo "  ⚠️  django-phonenumber-field skipped"
+pip install "phonenumbers>=8.13.0" -q || echo "  ⚠️  phonenumbers skipped"
+
+# Celery (optional, skip if fails)
+echo "  → Installing Celery (optional)..."
+pip install "celery>=5.3.0" -q || echo "  ⚠️  celery skipped"
+pip install "redis>=5.0.0" -q || echo "  ⚠️  redis skipped"
+pip install "django-celery-beat>=2.5.0" -q || echo "  ⚠️  django-celery-beat skipped"
+
+# Telegram bot (optional)
+pip install "python-telegram-bot>=20.7" -q || echo "  ⚠️  python-telegram-bot skipped"
+
+# Production server
+echo "  → Installing production server..."
+pip install "gunicorn>=21.2.0" -q || pip install gunicorn==21.2.0 -q
+pip install "whitenoise>=6.6.0" -q || pip install whitenoise==6.6.0 -q
+
+# Install Pillow separately with workaround for Python 3.13 (last, as it's problematic)
+echo "  → Installing Pillow (Python 3.13 compatible)..."
 pip install --upgrade setuptools pip wheel -q || true
+pip install "Pillow>=10.4.0" --no-build-isolation --no-cache-dir -q 2>&1 | tail -1 || \
+pip install "Pillow>=10.3.0" --no-build-isolation --no-cache-dir -q 2>&1 | tail -1 || \
+pip install "Pillow>=10.0.0" --no-build-isolation --no-cache-dir -q 2>&1 | tail -1 || \
+echo "  ⚠️  Pillow installation failed - skipping (install manually: pip install Pillow --no-build-isolation)"
 
-# Try multiple methods to install Pillow for Python 3.13
-if pip install "Pillow>=10.4.0" --no-build-isolation --no-cache-dir -q 2>&1 | grep -q "Successfully installed"; then
-    echo "✅ Pillow installed successfully"
-elif pip install "Pillow>=10.3.0" --no-build-isolation --no-cache-dir -q 2>&1 | grep -q "Successfully installed"; then
-    echo "✅ Pillow installed successfully"
-elif pip install "Pillow>=10.0.0" --no-build-isolation --no-cache-dir -q 2>&1 | grep -q "Successfully installed"; then
-    echo "✅ Pillow installed successfully"
-else
-    echo "⚠️  Pillow installation failed - skipping for now (can install manually later)"
-    echo "   To install manually later, run: pip install Pillow --no-build-isolation"
-fi
-
-# Clean up
-rm -f requirements_temp.txt
+echo "✅ Dependencies installation completed"
 
 # Setup environment file
 if [ ! -f .env ]; then
