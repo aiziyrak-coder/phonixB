@@ -298,11 +298,24 @@ server {
 }
 NGINX_BACKEND
 
-# Remove default site and disable conflicting configs
+# Remove default site and disable conflicting configs (safely - only symlinks, not actual configs)
 echo "  → Cleaning up existing Nginx configs..."
+echo "  → Note: Only disabling symlinks in sites-enabled, original configs in sites-available remain intact"
+
+# Backup existing enabled configs before disabling (optional, for safety)
+if [ -f /etc/nginx/sites-enabled/konsilium ]; then
+    echo "  → Backing up konsilium config symlink location..."
+    sudo cp /etc/nginx/sites-enabled/konsilium /tmp/konsilium-enabled-backup.txt 2>/dev/null || true
+fi
+if [ -f /etc/nginx/sites-enabled/mirzoai-backend ]; then
+    echo "  → Backing up mirzoai-backend config symlink location..."
+    sudo cp /etc/nginx/sites-enabled/mirzoai-backend /tmp/mirzoai-backend-enabled-backup.txt 2>/dev/null || true
+fi
+
+# Disable conflicting configs (only remove symlinks, original configs in sites-available are safe)
 sudo rm -f /etc/nginx/sites-enabled/default
-sudo rm -f /etc/nginx/sites-enabled/konsilium 2>/dev/null || true
-sudo rm -f /etc/nginx/sites-enabled/mirzoai-backend 2>/dev/null || true
+sudo rm -f /etc/nginx/sites-enabled/konsilium 2>/dev/null && echo "  → Disabled konsilium (config still in sites-available)" || true
+sudo rm -f /etc/nginx/sites-enabled/mirzoai-backend 2>/dev/null && echo "  → Disabled mirzoai-backend (config still in sites-available)" || true
 
 # Comment out SSL lines in configs temporarily (will be configured by certbot)
 echo "  → Preparing Nginx configs for SSL setup..."
