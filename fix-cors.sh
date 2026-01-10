@@ -30,6 +30,7 @@ server {
     http2 on;
     server_name api.ilmiyfaoliyat.uz;
 
+    # SSL certificates (check if they exist, if not use certbot to generate)
     ssl_certificate /etc/letsencrypt/live/api.ilmiyfaoliyat.uz/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/api.ilmiyfaoliyat.uz/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
@@ -112,6 +113,91 @@ server {
 }
 EOF
 
+# 3. Check if SSL certificates exist, if not skip SSL config
+if [ ! -f /etc/letsencrypt/live/api.ilmiyfaoliyat.uz/fullchain.pem ]; then
+    echo "⚠️  SSL certificates not found, creating HTTP-only config..."
+    # Create HTTP-only version without SSL
+    sudo tee /etc/nginx/sites-available/api-ilmiyfaoliyat.conf > /dev/null <<'EOF_HTTP'
+server {
+    listen 80;
+    listen [::]:80;
+    server_name api.ilmiyfaoliyat.uz;
+
+    client_max_body_size 50M;
+    client_body_timeout 60s;
+
+    gzip on;
+    gzip_vary on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml;
+
+    location /static/ {
+        alias /phonix/backend/staticfiles/;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location /media/ {
+        alias /phonix/backend/media/;
+        expires 7d;
+        add_header Cache-Control "public";
+    }
+
+    location / {
+        if ($request_method = 'OPTIONS') {
+            add_header 'Access-Control-Allow-Origin' 'https://ilmiyfaoliyat.uz' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, PATCH, DELETE, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type, Accept, Origin, User-Agent, X-Requested-With, X-CSRFToken' always;
+            add_header 'Access-Control-Allow-Credentials' 'true' always;
+            add_header 'Access-Control-Max-Age' '3600' always;
+            add_header 'Content-Type' 'text/plain charset=UTF-8';
+            add_header 'Content-Length' 0;
+            return 204;
+        }
+        
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_read_timeout 300s;
+        
+        add_header 'Access-Control-Allow-Origin' 'https://ilmiyfaoliyat.uz' always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+    }
+
+    location ~ ^/api/v1/payments/click/(prepare|complete|callback)/ {
+        if ($request_method = 'OPTIONS') {
+            add_header 'Access-Control-Allow-Origin' 'https://ilmiyfaoliyat.uz' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, PATCH, DELETE, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type, Accept, Origin, User-Agent, X-Requested-With' always;
+            add_header 'Access-Control-Allow-Credentials' 'true' always;
+            add_header 'Access-Control-Max-Age' '3600' always;
+            add_header 'Content-Type' 'text/plain charset=UTF-8';
+            add_header 'Content-Length' 0;
+            return 204;
+        }
+        
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+        proxy_buffering off;
+        
+        add_header 'Access-Control-Allow-Origin' 'https://ilmiyfaoliyat.uz' always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+    }
+
+    access_log /var/log/nginx/api-ilmiyfaoliyat.access.log;
+    error_log /var/log/nginx/api-ilmiyfaoliyat.error.log;
+}
+EOF_HTTP
+fi
+
 # 3. Test and reload Nginx
 echo "🧪 Testing Nginx configuration..."
 if sudo nginx -t; then
@@ -119,6 +205,8 @@ if sudo nginx -t; then
     echo "✅ Nginx reloaded successfully"
 else
     echo "❌ Nginx configuration test failed"
+    echo "⚠️  Trying to check what's wrong..."
+    sudo nginx -t 2>&1 | head -20
     exit 1
 fi
 
@@ -126,11 +214,29 @@ fi
 cd /phonix/backend
 git pull
 
-# 5. Restart backend service
+# 5. Check backend service errors first
+echo "🔍 Checking backend service errors..."
+sudo journalctl -u phoenix-backend --no-pager -n 20 | tail -10
+
+# 6. Try to start backend manually to see errors
+echo "🧪 Testing backend startup..."
+cd /phonix/backend
+source venv/bin/activate
+python manage.py check --deploy 2>&1 | head -20 || echo "⚠️  Django check failed"
+deactivate
+
+# 7. Restart backend service
 echo "🔄 Restarting backend service..."
 sudo systemctl restart phoenix-backend
-sleep 2
-sudo systemctl status phoenix-backend --no-pager | head -10
+sleep 3
+if sudo systemctl is-active --quiet phoenix-backend; then
+    echo "✅ Backend service is running"
+    sudo systemctl status phoenix-backend --no-pager | head -10
+else
+    echo "❌ Backend service failed to start"
+    echo "📋 Last 30 lines of logs:"
+    sudo journalctl -u phoenix-backend --no-pager -n 30
+fi
 
 echo ""
 echo "✅ CORS fix completed!"
