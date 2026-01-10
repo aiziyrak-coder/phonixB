@@ -423,7 +423,9 @@ class ClickPaymentService:
             logger.error(f"IMPORTANT: Invoice creation is REQUIRED for Click payments. User phone number is missing.")
             logger.error(f"IMPORTANT: User must provide a valid phone number that is registered in Click system.")
             logger.error(f"IMPORTANT: Ensure callback URLs are configured in Click merchant panel (merchant.click.uz)")
-            logger.error(f"Callback URLs should be: https://api.ilmiyfaoliyat.uz/click/prepare/ and https://api.ilmiyfaoliyat.uz/click/complete/")
+            logger.error(f"Callback URLs should be:")
+            logger.error(f"  Prepare: https://api.ilmiyfaoliyat.uz/api/v1/payments/click/prepare/")
+            logger.error(f"  Complete: https://api.ilmiyfaoliyat.uz/api/v1/payments/click/complete/")
             
             # Return error - cannot proceed without invoice
             return {
@@ -503,7 +505,9 @@ class ClickPaymentService:
             logger.error(f"User phone number: {phone_number}, Transaction ID: {transaction.id}")
             logger.error(f"IMPORTANT: User must register their phone number ({phone_number}) in Click system before making payments.")
             logger.error(f"IMPORTANT: Ensure callback URLs are configured in Click merchant panel (merchant.click.uz)")
-            logger.error(f"Callback URLs should be: https://api.ilmiyfaoliyat.uz/click/prepare/ and https://api.ilmiyfaoliyat.uz/click/complete/")
+            logger.error(f"Callback URLs should be:")
+            logger.error(f"  Prepare: https://api.ilmiyfaoliyat.uz/api/v1/payments/click/prepare/")
+            logger.error(f"  Complete: https://api.ilmiyfaoliyat.uz/api/v1/payments/click/complete/")
             
             # Return error - invoice creation failed, cannot proceed
             # Frontend should display error message to user
