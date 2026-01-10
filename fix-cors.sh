@@ -15,8 +15,19 @@ else
     echo "✅ CORS settings already exist in .env"
 fi
 
-# 2. Update Nginx config with proper CORS headers
-sudo tee /etc/nginx/sites-available/api-ilmiyfaoliyat.conf > /dev/null <<'EOF'
+# 2. Check if SSL certificates exist first
+SSL_CERT_EXISTS=false
+if [ -f /etc/letsencrypt/live/api.ilmiyfaoliyat.uz/fullchain.pem ]; then
+    SSL_CERT_EXISTS=true
+    echo "✅ SSL certificates found, creating HTTPS config..."
+else
+    echo "⚠️  SSL certificates not found, creating HTTP-only config first..."
+fi
+
+# 3. Update Nginx config based on SSL certificate availability
+if [ "$SSL_CERT_EXISTS" = true ]; then
+    # HTTPS config with SSL
+    sudo tee /etc/nginx/sites-available/api-ilmiyfaoliyat.conf > /dev/null <<'EOF'
 server {
     listen 80;
     listen [::]:80;
@@ -30,7 +41,6 @@ server {
     http2 on;
     server_name api.ilmiyfaoliyat.uz;
 
-    # SSL certificates (check if they exist, if not use certbot to generate)
     ssl_certificate /etc/letsencrypt/live/api.ilmiyfaoliyat.uz/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/api.ilmiyfaoliyat.uz/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
@@ -112,11 +122,8 @@ server {
     error_log /var/log/nginx/api-ilmiyfaoliyat.error.log;
 }
 EOF
-
-# 3. Check if SSL certificates exist, if not skip SSL config
-if [ ! -f /etc/letsencrypt/live/api.ilmiyfaoliyat.uz/fullchain.pem ]; then
-    echo "⚠️  SSL certificates not found, creating HTTP-only config..."
-    # Create HTTP-only version without SSL
+else
+    # HTTP-only config without SSL (for initial setup)
     sudo tee /etc/nginx/sites-available/api-ilmiyfaoliyat.conf > /dev/null <<'EOF_HTTP'
 server {
     listen 80;
@@ -198,7 +205,7 @@ server {
 EOF_HTTP
 fi
 
-# 3. Test and reload Nginx
+# 4. Test and reload Nginx
 echo "🧪 Testing Nginx configuration..."
 if sudo nginx -t; then
     sudo systemctl reload nginx
@@ -210,22 +217,55 @@ else
     exit 1
 fi
 
-# 4. Pull latest backend code
+# 5. If HTTP-only config was created, try to get SSL certificates
+if [ "$SSL_CERT_EXISTS" = false ]; then
+    echo "🔒 Attempting to get SSL certificates..."
+    # Stop nginx temporarily for standalone mode
+    sudo systemctl stop nginx
+    
+    # Get certificate using standalone mode
+    if sudo certbot certonly --standalone -d api.ilmiyfaoliyat.uz --non-interactive --agree-tos --email admin@ilmiyfaoliyat.uz 2>&1 | tail -10; then
+        echo "✅ SSL certificates obtained successfully"
+        # Restart nginx
+        sudo systemctl start nginx
+        # Now regenerate config with SSL
+        SSL_CERT_EXISTS=true
+        echo "🔄 Regenerating Nginx config with SSL..."
+        # Re-run the config creation with SSL
+        ./fix-cors.sh
+        exit 0
+    else
+        echo "⚠️  SSL certificate generation failed, continuing with HTTP-only"
+        sudo systemctl start nginx
+    fi
+fi
+
+# 6. Pull latest backend code
 cd /phonix/backend
 git pull
 
-# 5. Check backend service errors first
+# 7. Check backend service errors first
 echo "🔍 Checking backend service errors..."
 sudo journalctl -u phoenix-backend --no-pager -n 20 | tail -10
 
-# 6. Try to start backend manually to see errors
+# 8. Try to start backend manually to see errors
 echo "🧪 Testing backend startup..."
 cd /phonix/backend
 source venv/bin/activate
-python manage.py check --deploy 2>&1 | head -20 || echo "⚠️  Django check failed"
+
+# Load environment variables
+export $(cat .env | grep -v '^#' | xargs)
+
+# Check Django
+python manage.py check --deploy 2>&1 | head -30 || echo "⚠️  Django check failed"
+
+# Try to run gunicorn manually to see errors
+echo "🧪 Testing Gunicorn startup..."
+timeout 5 gunicorn --workers 1 --bind 127.0.0.1:8000 --timeout 10 config.wsgi:application 2>&1 | head -30 || echo "⚠️  Gunicorn test completed (timeout expected)"
+
 deactivate
 
-# 7. Restart backend service
+# 9. Restart backend service
 echo "🔄 Restarting backend service..."
 sudo systemctl restart phoenix-backend
 sleep 3
