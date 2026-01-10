@@ -155,6 +155,7 @@ chmod -R +x node_modules/.bin 2>/dev/null || true
 echo "📦 Building frontend..."
 export VITE_API_BASE_URL='https://api.ilmiyfaoliyat.uz/api/v1'
 export VITE_MEDIA_URL='https://api.ilmiyfaoliyat.uz/media/'
+export VITE_GEMINI_API_KEY='AIzaSyBvdPzXpZyjqydWisq4_tM4pxMIQM3NAxE'
 
 # Use npx to run vite if direct command fails
 npx vite build || npm run build || ./node_modules/.bin/vite build
