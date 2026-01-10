@@ -186,8 +186,9 @@ server {
     http2 on;
     server_name ilmiyfaoliyat.uz www.ilmiyfaoliyat.uz;
 
-    ssl_certificate /etc/letsencrypt/live/ilmiyfaoliyat.uz/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/ilmiyfaoliyat.uz/privkey.pem;
+    # SSL certificates (will be configured by certbot)
+    # ssl_certificate /etc/letsencrypt/live/ilmiyfaoliyat.uz/fullchain.pem;
+    # ssl_certificate_key /etc/letsencrypt/live/ilmiyfaoliyat.uz/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
     ssl_prefer_server_ciphers on;
@@ -244,8 +245,9 @@ server {
     http2 on;
     server_name api.ilmiyfaoliyat.uz;
 
-    ssl_certificate /etc/letsencrypt/live/api.ilmiyfaoliyat.uz/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/api.ilmiyfaoliyat.uz/privkey.pem;
+    # SSL certificates (will be configured by certbot)
+    # ssl_certificate /etc/letsencrypt/live/api.ilmiyfaoliyat.uz/fullchain.pem;
+    # ssl_certificate_key /etc/letsencrypt/live/api.ilmiyfaoliyat.uz/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
     ssl_prefer_server_ciphers on;
@@ -300,32 +302,134 @@ NGINX_BACKEND
 echo "  → Cleaning up existing Nginx configs..."
 sudo rm -f /etc/nginx/sites-enabled/default
 sudo rm -f /etc/nginx/sites-enabled/konsilium 2>/dev/null || true
+sudo rm -f /etc/nginx/sites-enabled/mirzoai-backend 2>/dev/null || true
+
+# Comment out SSL lines in configs temporarily (will be configured by certbot)
+echo "  → Preparing Nginx configs for SSL setup..."
+sudo sed -i 's|ssl_certificate|# ssl_certificate|g' /etc/nginx/sites-available/ilmiyfaoliyat.conf 2>/dev/null || true
+sudo sed -i 's|ssl_certificate|# ssl_certificate|g' /etc/nginx/sites-available/api-ilmiyfaoliyat.conf 2>/dev/null || true
+
+# Temporarily disable HTTPS servers (keep only HTTP redirect)
+echo "  → Temporarily configuring HTTP-only configs..."
+sudo tee /etc/nginx/sites-available/ilmiyfaoliyat.conf > /dev/null <<'NGINX_FRONTEND_HTTP'
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ilmiyfaoliyat.uz www.ilmiyfaoliyat.uz;
+    
+    root /phonix/frontend/dist;
+    index index.html;
+
+    gzip on;
+    gzip_vary on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml text/javascript;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /media/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        expires 7d;
+    }
+
+    access_log /var/log/nginx/ilmiyfaoliyat.access.log;
+    error_log /var/log/nginx/ilmiyfaoliyat.error.log;
+}
+NGINX_FRONTEND_HTTP
+
+sudo tee /etc/nginx/sites-available/api-ilmiyfaoliyat.conf > /dev/null <<'NGINX_BACKEND_HTTP'
+server {
+    listen 80;
+    listen [::]:80;
+    server_name api.ilmiyfaoliyat.uz;
+
+    client_max_body_size 50M;
+    client_body_timeout 60s;
+
+    gzip on;
+    gzip_vary on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml;
+
+    location /static/ {
+        alias /phonix/backend/staticfiles/;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location /media/ {
+        alias /phonix/backend/media/;
+        expires 7d;
+        add_header Cache-Control "public";
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_read_timeout 300s;
+    }
+
+    location ~ ^/api/v1/payments/click/(prepare|complete|callback)/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+        proxy_buffering off;
+    }
+
+    access_log /var/log/nginx/api-ilmiyfaoliyat.access.log;
+    error_log /var/log/nginx/api-ilmiyfaoliyat.error.log;
+}
+NGINX_BACKEND_HTTP
 
 # Enable sites (create symlinks)
 echo "  → Enabling Nginx sites..."
 sudo ln -sf /etc/nginx/sites-available/ilmiyfaoliyat.conf /etc/nginx/sites-enabled/ilmiyfaoliyat.conf
 sudo ln -sf /etc/nginx/sites-available/api-ilmiyfaoliyat.conf /etc/nginx/sites-enabled/api-ilmiyfaoliyat.conf
 
-# Verify config files exist
-if [ -f /etc/nginx/sites-available/ilmiyfaoliyat.conf ] && [ -f /etc/nginx/sites-available/api-ilmiyfaoliyat.conf ]; then
-    echo "  ✅ Nginx config files created successfully"
-    
-    # Test and reload nginx
-    echo "  → Testing Nginx configuration..."
-    if sudo nginx -t; then
-        sudo systemctl reload nginx || sudo systemctl restart nginx
-        echo "  ✅ Nginx reloaded successfully"
-    else
-        echo "  ⚠️  Nginx test failed, check configuration manually"
-        echo "  Run: sudo nginx -t"
-    fi
+# Test and reload nginx (HTTP only first)
+echo "  → Testing Nginx configuration (HTTP only)..."
+if sudo nginx -t; then
+    sudo systemctl reload nginx || sudo systemctl restart nginx
+    echo "  ✅ Nginx reloaded successfully (HTTP only)"
 else
-    echo "  ⚠️  Nginx config files not found, check creation above"
+    echo "  ⚠️  Nginx test failed, check configuration manually"
+    echo "  Run: sudo nginx -t"
+    exit 1
 fi
 
 # SSL certificate setup (first time only)
 echo "🔒 Setting up SSL certificates..."
-sudo certbot --nginx -d ilmiyfaoliyat.uz -d www.ilmiyfaoliyat.uz -d api.ilmiyfaoliyat.uz --non-interactive --agree-tos --email admin@ilmiyfaoliyat.uz --redirect 2>&1 | tail -5 || echo "SSL setup skipped or already exists"
+if sudo certbot --nginx -d ilmiyfaoliyat.uz -d www.ilmiyfaoliyat.uz -d api.ilmiyfaoliyat.uz --non-interactive --agree-tos --email admin@ilmiyfaoliyat.uz --redirect 2>&1 | tail -10; then
+    echo "  ✅ SSL certificates installed successfully"
+    sudo systemctl reload nginx
+else
+    echo "  ⚠️  SSL setup failed or certificates already exist"
+    echo "  You can set up SSL manually later with: sudo certbot --nginx"
+fi
 
 # Systemd service setup
 echo "🔄 Setting up systemd service..."
