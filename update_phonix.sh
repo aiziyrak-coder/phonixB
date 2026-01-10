@@ -364,6 +364,17 @@ server {
     }
 
     location /api/ {
+        if ($request_method = 'OPTIONS') {
+            add_header 'Access-Control-Allow-Origin' 'https://ilmiyfaoliyat.uz' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, PATCH, DELETE, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type, Accept, Origin, User-Agent, X-Requested-With, X-CSRFToken' always;
+            add_header 'Access-Control-Allow-Credentials' 'true' always;
+            add_header 'Access-Control-Max-Age' '3600' always;
+            add_header 'Content-Type' 'text/plain charset=UTF-8';
+            add_header 'Content-Length' 0;
+            return 204;
+        }
+        
         proxy_pass http://127.0.0.1:8000;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
@@ -371,17 +382,9 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         
-        # CORS headers for API requests from frontend
-        if ($request_method = 'OPTIONS') {
-            add_header 'Access-Control-Allow-Origin' 'https://ilmiyfaoliyat.uz' always;
-            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, PATCH, DELETE, OPTIONS' always;
-            add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type, Accept, Origin, User-Agent, X-Requested-With' always;
-            add_header 'Access-Control-Allow-Credentials' 'true' always;
-            add_header 'Access-Control-Max-Age' '3600' always;
-            add_header 'Content-Type' 'text/plain charset=UTF-8';
-            add_header 'Content-Length' 0;
-            return 204;
-        }
+        # CORS headers for actual requests
+        add_header 'Access-Control-Allow-Origin' 'https://ilmiyfaoliyat.uz' always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
     }
 
     location /media/ {
