@@ -62,13 +62,13 @@ source venv/bin/activate
 pip install --upgrade pip -q
 pip install --upgrade setuptools wheel -q
 
-# Create temporary requirements without Pillow
+# Create temporary requirements without Pillow and debug toolbar (optional packages)
 echo "📦 Preparing requirements..."
-grep -v "^Pillow" requirements.txt > requirements_temp.txt || cp requirements.txt requirements_temp.txt
+grep -v "^Pillow" requirements.txt | grep -v "^#" | grep -v "^$" | grep -v "django-debug-toolbar" > requirements_temp.txt || cp requirements.txt requirements_temp.txt
 
 # Install requirements without Pillow first
 echo "📦 Installing dependencies (without Pillow)..."
-pip install -r requirements_temp.txt gunicorn -q
+pip install -r requirements_temp.txt -q
 
 # Install Pillow separately with workaround for Python 3.13
 echo "📦 Installing Pillow (Python 3.13 compatible version)..."
