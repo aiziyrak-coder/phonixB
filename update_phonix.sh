@@ -146,13 +146,18 @@ else
 fi
 
 # Install dependencies and build
-echo "📦 Building frontend..."
-npm install -q
+echo "📦 Installing frontend dependencies..."
+npm install --legacy-peer-deps -q || npm install -q
 
+# Fix permissions for node_modules/.bin
+chmod -R +x node_modules/.bin 2>/dev/null || true
+
+echo "📦 Building frontend..."
 export VITE_API_BASE_URL='https://api.ilmiyfaoliyat.uz/api/v1'
 export VITE_MEDIA_URL='https://api.ilmiyfaoliyat.uz/media/'
 
-npm run build
+# Use npx to run vite if direct command fails
+npx vite build || npm run build || ./node_modules/.bin/vite build
 
 # Setup PostgreSQL database
 echo "🗄️  Setting up database..."
