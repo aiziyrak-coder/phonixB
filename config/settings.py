@@ -190,7 +190,7 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
 
 # Gemini AI Settings
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', 'AIzaSyBm02i-rm_XNVckLVGOKBqH1GH6tk4pFKE')
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', 'AIzaSyBvdPzXpZyjqydWisq4_tM4pxMIQM3NAxE')
 
 # Click Payment Settings
 # PHOENIX service credentials (new integration from 2025-12-18)
