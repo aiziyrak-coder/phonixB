@@ -178,18 +178,30 @@ SIMPLE_JWT = {
 }
 
 # CORS Settings
-# Explicitly check for 'True' string (case-insensitive)
-cors_allow_all = os.getenv('CORS_ALLOW_ALL_ORIGINS', 'False').strip().lower()
-CORS_ALLOW_ALL_ORIGINS = cors_allow_all in ('true', '1', 'yes', 'on')  # Production: False
+# Explicitly check for 'True' string (case-insensitive) - default to False for production
+cors_allow_all_env = os.getenv('CORS_ALLOW_ALL_ORIGINS', '').strip()
+if cors_allow_all_env:
+    cors_allow_all = cors_allow_all_env.lower()
+    CORS_ALLOW_ALL_ORIGINS = cors_allow_all in ('true', '1', 'yes', 'on')
+else:
+    # Default to False if not set
+    CORS_ALLOW_ALL_ORIGINS = False
 
 # Clean CORS_ALLOWED_ORIGINS - remove spaces and filter empty strings
 cors_origins_env = os.getenv('CORS_ALLOWED_ORIGINS', 'https://ilmiyfaoliyat.uz,http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173')
 CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins_env.split(',') if origin.strip()]
 
-# Debug logging (remove in production if needed)
+# If CORS_ALLOW_ALL_ORIGINS is True, clear CORS_ALLOWED_ORIGINS (django-cors-headers behavior)
+if CORS_ALLOW_ALL_ORIGINS:
+    CORS_ALLOWED_ORIGINS = []
+
+# Debug logging (for troubleshooting)
 import logging
 logger = logging.getLogger(__name__)
-logger.info(f"CORS settings loaded: ALLOW_ALL_ORIGINS={CORS_ALLOW_ALL_ORIGINS}, ALLOWED_ORIGINS={CORS_ALLOWED_ORIGINS}")
+if not CORS_ALLOW_ALL_ORIGINS:
+    logger.info(f"CORS settings: ALLOW_ALL=False, ALLOWED_ORIGINS={CORS_ALLOWED_ORIGINS}, ENV_VALUE={cors_allow_all_env}")
+else:
+    logger.warning(f"CORS_ALLOW_ALL_ORIGINS is True! This should be False in production. ENV_VALUE={cors_allow_all_env}")
 
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_METHODS = ['DELETE', 'GET', 'OPTIONS', 'PATCH', 'POST', 'PUT']
