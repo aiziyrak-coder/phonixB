@@ -5,9 +5,18 @@ Django settings for Phoenix Scientific Platform
 import os
 from pathlib import Path
 from datetime import timedelta
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load environment variables from .env file
+env_path = BASE_DIR / '.env'
+if env_path.exists():
+    load_dotenv(env_path)
+else:
+    # Try to load from parent directory if .env is not in backend root
+    load_dotenv(BASE_DIR.parent / '.env')
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-z#%kwd+0v#i-7w-7be6!c4=u!6#$259mwd&^dpl2&acoueb3+(')
