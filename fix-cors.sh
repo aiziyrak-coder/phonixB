@@ -88,9 +88,8 @@ server {
         proxy_set_header X-Forwarded-Host $host;
         proxy_read_timeout 300s;
         
-        # CORS headers for actual requests
-        add_header 'Access-Control-Allow-Origin' 'https://ilmiyfaoliyat.uz' always;
-        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        # Don't add CORS headers here - let Django CORS middleware handle it
+        # Adding here causes duplicate headers
     }
 
     location ~ ^/api/v1/payments/click/(prepare|complete|callback)/ {
@@ -170,8 +169,7 @@ server {
         proxy_set_header X-Forwarded-Host $host;
         proxy_read_timeout 300s;
         
-        add_header 'Access-Control-Allow-Origin' 'https://ilmiyfaoliyat.uz' always;
-        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        # Don't add CORS headers here - let Django CORS middleware handle it
     }
 
     location ~ ^/api/v1/payments/click/(prepare|complete|callback)/ {
