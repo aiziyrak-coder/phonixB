@@ -19,8 +19,14 @@ sudo apt-get update -qq
 echo "📦 Installing dependencies..."
 sudo apt-get install -y python3 python3-pip python3-venv nginx postgresql postgresql-contrib git curl certbot python3-certbot-nginx nodejs npm build-essential 2>/dev/null || true
 
-# Create deployment directory
+# Create deployment directory (if doesn't exist)
 echo "📁 Creating directories..."
+if [ ! -d "${DEPLOY_DIR}" ]; then
+    echo "Creating main deployment directory: ${DEPLOY_DIR}"
+    sudo mkdir -p ${DEPLOY_DIR}
+    sudo chown -R $(whoami):$(whoami) ${DEPLOY_DIR}
+fi
+
 sudo mkdir -p ${DEPLOY_DIR}/backend ${DEPLOY_DIR}/frontend ${DEPLOY_DIR}/backend/logs ${DEPLOY_DIR}/backend/media ${DEPLOY_DIR}/backend/staticfiles
 sudo chown -R $(whoami):$(whoami) ${DEPLOY_DIR}
 
