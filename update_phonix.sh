@@ -63,8 +63,8 @@ pip install --upgrade pip -q
 pip install --upgrade setuptools wheel -q
 
 # Install Pillow separately first (fix for Python 3.13 compatibility)
-echo "📦 Installing Pillow..."
-pip install --upgrade Pillow -q || pip install Pillow==10.4.0 -q
+echo "📦 Installing Pillow (Python 3.13 compatible version)..."
+pip install --upgrade Pillow -q || pip install "Pillow>=10.3.0" -q || pip install "Pillow>=10.0.0" --no-build-isolation -q
 
 # Install other requirements
 pip install -r requirements.txt gunicorn -q
