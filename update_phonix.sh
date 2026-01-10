@@ -181,8 +181,9 @@ server {
 }
 
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
     server_name ilmiyfaoliyat.uz www.ilmiyfaoliyat.uz;
 
     ssl_certificate /etc/letsencrypt/live/ilmiyfaoliyat.uz/fullchain.pem;
@@ -238,8 +239,9 @@ server {
 }
 
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
     server_name api.ilmiyfaoliyat.uz;
 
     ssl_certificate /etc/letsencrypt/live/api.ilmiyfaoliyat.uz/fullchain.pem;
@@ -294,8 +296,10 @@ server {
 }
 NGINX_BACKEND
 
-# Remove default site first
+# Remove default site and disable conflicting configs
+echo "  → Cleaning up existing Nginx configs..."
 sudo rm -f /etc/nginx/sites-enabled/default
+sudo rm -f /etc/nginx/sites-enabled/konsilium 2>/dev/null || true
 
 # Enable sites (create symlinks)
 echo "  → Enabling Nginx sites..."
