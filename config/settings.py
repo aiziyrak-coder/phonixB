@@ -179,16 +179,17 @@ SIMPLE_JWT = {
 
 # CORS Settings
 # Explicitly check for 'True' string (case-insensitive) - default to False for production
-cors_allow_all_env = os.getenv('CORS_ALLOW_ALL_ORIGINS', 'False').strip()
+cors_allow_all_env_raw = os.getenv('CORS_ALLOW_ALL_ORIGINS', 'False')
+cors_allow_all_env = cors_allow_all_env_raw.strip() if cors_allow_all_env_raw else 'False'
 cors_allow_all_lower = cors_allow_all_env.lower() if cors_allow_all_env else 'false'
 
 # Only set to True if explicitly 'true', '1', 'yes', or 'on'
-# Any other value (including 'False', 'false', '', etc.) should be False
-CORS_ALLOW_ALL_ORIGINS = cors_allow_all_lower in ('true', '1', 'yes', 'on')
-
-# Double-check: explicitly force False if set to any false-like value
-if cors_allow_all_lower in ('false', '0', 'no', 'off', ''):
+# Any other value (including 'False', 'false', '', None, etc.) should be False
+# Default to False if not set or empty
+if not cors_allow_all_env or cors_allow_all_lower in ('false', '0', 'no', 'off', ''):
     CORS_ALLOW_ALL_ORIGINS = False
+else:
+    CORS_ALLOW_ALL_ORIGINS = cors_allow_all_lower in ('true', '1', 'yes', 'on')
 
 # Clean CORS_ALLOWED_ORIGINS - remove spaces and filter empty strings
 cors_origins_env = os.getenv('CORS_ALLOWED_ORIGINS', 'https://ilmiyfaoliyat.uz,http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173')
