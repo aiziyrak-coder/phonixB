@@ -59,6 +59,11 @@ class RegisterSerializer(serializers.ModelSerializer):
     
     password = serializers.CharField(write_only=True, min_length=6)
     password_confirm = serializers.CharField(write_only=True, min_length=6)
+    affiliation = serializers.CharField(required=False, allow_blank=True, default='')
+    phone = serializers.CharField(required=True)
+    email = serializers.EmailField(required=True)
+    first_name = serializers.CharField(required=True)
+    last_name = serializers.CharField(required=True)
     
     class Meta:
         model = User
@@ -67,9 +72,24 @@ class RegisterSerializer(serializers.ModelSerializer):
             'first_name', 'last_name', 'patronymic', 'affiliation', 'orcid_id'
         )
     
+    def validate_phone(self, value):
+        """Normalize phone number"""
+        if not value:
+            raise serializers.ValidationError('Phone number is required')
+        # Remove spaces and normalize
+        cleaned_phone = str(value).strip().replace(' ', '').replace('-', '')
+        if not cleaned_phone or len(cleaned_phone.replace('+', '')) < 9:
+            raise serializers.ValidationError('Invalid phone number format')
+        return cleaned_phone
+    
     def validate(self, attrs):
-        if attrs['password'] != attrs['password_confirm']:
+        if attrs.get('password') != attrs.get('password_confirm'):
             raise serializers.ValidationError({"password": "Passwords don't match"})
+        
+        # Ensure affiliation is not empty (can be optional but if provided, must be valid)
+        if not attrs.get('affiliation', '').strip():
+            attrs['affiliation'] = 'N/A'  # Default value if empty
+        
         return attrs
     
     def create(self, validated_data):
