@@ -116,46 +116,61 @@ class UserViewSet(viewsets.ModelViewSet):
 def register(request):
     """Register a new user"""
     import logging
+    import json
     logger = logging.getLogger(__name__)
     
     try:
         # Log incoming request data
-        logger.info(f"Registration request received. Content-Type: {request.content_type}")
-        logger.info(f"Request data: {request.data}")
-        logger.info(f"Request body: {request.body[:500] if hasattr(request, 'body') else 'N/A'}")
+        logger.info(f"=== Registration request received ===")
+        logger.info(f"Content-Type: {request.content_type}")
+        logger.info(f"Method: {request.method}")
+        logger.info(f"Has request.data: {hasattr(request, 'data')}")
         
-        # Handle both JSON and form data
+        # Parse request data - DRF should handle this, but ensure it works
+        data = None
         if hasattr(request, 'data') and request.data:
             data = request.data
+            logger.info(f"Using request.data: {data}")
         elif hasattr(request, 'body') and request.body:
-            import json
             try:
                 data = json.loads(request.body.decode('utf-8'))
+                logger.info(f"Parsed from body: {data}")
             except (json.JSONDecodeError, UnicodeDecodeError) as e:
-                logger.error(f"JSON decode error: {e}")
-                return Response({'detail': 'Invalid JSON format'}, status=status.HTTP_400_BAD_REQUEST)
+                logger.error(f"JSON decode error: {e}, body: {request.body[:200]}")
+                return Response({'detail': 'Invalid JSON format', 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         else:
-            logger.error("No request data found")
+            logger.error("No request data found - both request.data and request.body are empty")
             return Response({'detail': 'No data provided'}, status=status.HTTP_400_BAD_REQUEST)
         
+        if not data:
+            logger.error("Data is None or empty after parsing")
+            return Response({'detail': 'No data provided'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        logger.info(f"Processing registration with data: {list(data.keys())}")
         serializer = RegisterSerializer(data=data)
+        
         if serializer.is_valid():
             user = serializer.save()
             refresh = RefreshToken.for_user(user)
-            logger.info(f"User registered successfully: {user.phone}, {user.email}")
+            logger.info(f"✅ User registered successfully: {user.phone}, {user.email}")
             return Response({
                 'user': UserSerializer(user, context={'request': request}).data,
                 'refresh': str(refresh),
                 'access': str(refresh.access_token),
             }, status=status.HTTP_201_CREATED)
         
-        logger.warning(f"Registration validation failed: {serializer.errors}")
+        logger.warning(f"❌ Registration validation failed: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         import traceback
-        logger.error(f"Registration error: {str(e)}")
-        logger.error(traceback.format_exc())
-        return Response({'detail': str(e), 'error_type': type(e).__name__}, status=status.HTTP_400_BAD_REQUEST)
+        error_trace = traceback.format_exc()
+        logger.error(f"❌ Registration exception: {str(e)}")
+        logger.error(f"Traceback: {error_trace}")
+        return Response({
+            'detail': 'Registration failed',
+            'error': str(e),
+            'error_type': type(e).__name__
+        }, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['POST'])
