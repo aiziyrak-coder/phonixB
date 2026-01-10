@@ -178,11 +178,18 @@ SIMPLE_JWT = {
 }
 
 # CORS Settings
-CORS_ALLOW_ALL_ORIGINS = os.getenv('CORS_ALLOW_ALL_ORIGINS', 'False') == 'True'  # Production: False
+# Explicitly check for 'True' string (case-insensitive)
+cors_allow_all = os.getenv('CORS_ALLOW_ALL_ORIGINS', 'False').strip().lower()
+CORS_ALLOW_ALL_ORIGINS = cors_allow_all in ('true', '1', 'yes', 'on')  # Production: False
 
 # Clean CORS_ALLOWED_ORIGINS - remove spaces and filter empty strings
 cors_origins_env = os.getenv('CORS_ALLOWED_ORIGINS', 'https://ilmiyfaoliyat.uz,http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173')
 CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins_env.split(',') if origin.strip()]
+
+# Debug logging (remove in production if needed)
+import logging
+logger = logging.getLogger(__name__)
+logger.info(f"CORS settings loaded: ALLOW_ALL_ORIGINS={CORS_ALLOW_ALL_ORIGINS}, ALLOWED_ORIGINS={CORS_ALLOWED_ORIGINS}")
 
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_METHODS = ['DELETE', 'GET', 'OPTIONS', 'PATCH', 'POST', 'PUT']
