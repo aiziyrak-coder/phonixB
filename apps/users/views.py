@@ -115,21 +115,47 @@ class UserViewSet(viewsets.ModelViewSet):
 @csrf_exempt
 def register(request):
     """Register a new user"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     try:
-        serializer = RegisterSerializer(data=request.data)
+        # Log incoming request data
+        logger.info(f"Registration request received. Content-Type: {request.content_type}")
+        logger.info(f"Request data: {request.data}")
+        logger.info(f"Request body: {request.body[:500] if hasattr(request, 'body') else 'N/A'}")
+        
+        # Handle both JSON and form data
+        if hasattr(request, 'data') and request.data:
+            data = request.data
+        elif hasattr(request, 'body') and request.body:
+            import json
+            try:
+                data = json.loads(request.body.decode('utf-8'))
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                logger.error(f"JSON decode error: {e}")
+                return Response({'detail': 'Invalid JSON format'}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            logger.error("No request data found")
+            return Response({'detail': 'No data provided'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        serializer = RegisterSerializer(data=data)
         if serializer.is_valid():
             user = serializer.save()
             refresh = RefreshToken.for_user(user)
+            logger.info(f"User registered successfully: {user.phone}, {user.email}")
             return Response({
                 'user': UserSerializer(user, context={'request': request}).data,
                 'refresh': str(refresh),
                 'access': str(refresh.access_token),
             }, status=status.HTTP_201_CREATED)
+        
+        logger.warning(f"Registration validation failed: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         import traceback
-        traceback.print_exc()
-        return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        logger.error(f"Registration error: {str(e)}")
+        logger.error(traceback.format_exc())
+        return Response({'detail': str(e), 'error_type': type(e).__name__}, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['POST'])
