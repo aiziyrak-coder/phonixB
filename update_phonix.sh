@@ -62,12 +62,26 @@ source venv/bin/activate
 pip install --upgrade pip -q
 pip install --upgrade setuptools wheel -q
 
-# Install Pillow separately first (fix for Python 3.13 compatibility)
-echo "📦 Installing Pillow (Python 3.13 compatible version)..."
-pip install --upgrade Pillow -q || pip install "Pillow>=10.3.0" -q || pip install "Pillow>=10.0.0" --no-build-isolation -q
+# Create temporary requirements without Pillow
+echo "📦 Preparing requirements..."
+grep -v "^Pillow" requirements.txt > requirements_temp.txt || cp requirements.txt requirements_temp.txt
 
-# Install other requirements
-pip install -r requirements.txt gunicorn -q
+# Install requirements without Pillow first
+echo "📦 Installing dependencies (without Pillow)..."
+pip install -r requirements_temp.txt gunicorn -q
+
+# Install Pillow separately with workaround for Python 3.13
+echo "📦 Installing Pillow (Python 3.13 compatible version)..."
+pip install --upgrade setuptools pip wheel -q || true
+pip install "Pillow>=10.3.0" --no-build-isolation --no-cache-dir -q 2>&1 | tail -5 || \
+pip install "Pillow>=10.0.0" --no-build-isolation --no-cache-dir -q 2>&1 | tail -5 || \
+pip install Pillow --no-build-isolation --no-cache-dir -q 2>&1 | tail -5 || \
+echo "⚠️  Pillow installation failed, trying alternative method..." && \
+pip install --no-build-isolation --no-cache-dir --no-deps Pillow -q && \
+pip install Pillow -q
+
+# Clean up
+rm -f requirements_temp.txt
 
 # Setup environment file
 if [ ! -f .env ]; then
