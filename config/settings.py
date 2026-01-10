@@ -179,17 +179,15 @@ SIMPLE_JWT = {
 
 # CORS Settings
 # Explicitly check for 'True' string (case-insensitive) - default to False for production
+# IMPORTANT: Start with False, only set to True if explicitly 'true'
 cors_allow_all_env_raw = os.getenv('CORS_ALLOW_ALL_ORIGINS', 'False')
 cors_allow_all_env = cors_allow_all_env_raw.strip() if cors_allow_all_env_raw else 'False'
 cors_allow_all_lower = cors_allow_all_env.lower() if cors_allow_all_env else 'false'
 
-# Only set to True if explicitly 'true', '1', 'yes', or 'on'
-# Any other value (including 'False', 'false', '', None, etc.) should be False
-# Default to False if not set or empty
-if not cors_allow_all_env or cors_allow_all_lower in ('false', '0', 'no', 'off', ''):
-    CORS_ALLOW_ALL_ORIGINS = False
-else:
-    CORS_ALLOW_ALL_ORIGINS = cors_allow_all_lower in ('true', '1', 'yes', 'on')
+# Default to False - only set to True if explicitly 'true', '1', 'yes', or 'on'
+CORS_ALLOW_ALL_ORIGINS = False
+if cors_allow_all_lower in ('true', '1', 'yes', 'on'):
+    CORS_ALLOW_ALL_ORIGINS = True
 
 # Clean CORS_ALLOWED_ORIGINS - remove spaces and filter empty strings
 cors_origins_env = os.getenv('CORS_ALLOWED_ORIGINS', 'https://ilmiyfaoliyat.uz,http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173')
