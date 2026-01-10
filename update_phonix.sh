@@ -302,6 +302,10 @@ NGINX_BACKEND
 echo "  → Cleaning up existing Nginx configs..."
 echo "  → Note: Only disabling symlinks in sites-enabled, original configs in sites-available remain intact"
 
+# List all enabled configs to identify conflicts
+echo "  → Checking for conflicting server names..."
+CONFLICTING_CONFIGS=$(ls /etc/nginx/sites-enabled/ 2>/dev/null | grep -v "ilmiyfaoliyat\|api-ilmiyfaoliyat" || true)
+
 # Backup existing enabled configs before disabling (optional, for safety)
 if [ -f /etc/nginx/sites-enabled/konsilium ]; then
     echo "  → Backing up konsilium config symlink location..."
@@ -312,10 +316,22 @@ if [ -f /etc/nginx/sites-enabled/mirzoai-backend ]; then
     sudo cp /etc/nginx/sites-enabled/mirzoai-backend /tmp/mirzoai-backend-enabled-backup.txt 2>/dev/null || true
 fi
 
-# Disable conflicting configs (only remove symlinks, original configs in sites-available are safe)
+# Disable ALL conflicting configs (only remove symlinks, original configs in sites-available are safe)
 sudo rm -f /etc/nginx/sites-enabled/default
 sudo rm -f /etc/nginx/sites-enabled/konsilium 2>/dev/null && echo "  → Disabled konsilium (config still in sites-available)" || true
 sudo rm -f /etc/nginx/sites-enabled/mirzoai-backend 2>/dev/null && echo "  → Disabled mirzoai-backend (config still in sites-available)" || true
+sudo rm -f /etc/nginx/sites-enabled/phoenix 2>/dev/null && echo "  → Disabled phoenix (if exists, config still in sites-available)" || true
+
+# Disable any other configs that might conflict with our server names
+for config in $CONFLICTING_CONFIGS; do
+    if [ -f "/etc/nginx/sites-enabled/$config" ] && [ "$config" != "ilmiyfaoliyat.conf" ] && [ "$config" != "api-ilmiyfaoliyat.conf" ]; then
+        # Check if this config uses our server names
+        if sudo grep -q "ilmiyfaoliyat.uz\|api.ilmiyfaoliyat.uz" "/etc/nginx/sites-enabled/$config" 2>/dev/null; then
+            echo "  → Disabling conflicting config: $config"
+            sudo rm -f "/etc/nginx/sites-enabled/$config"
+        fi
+    fi
+done
 
 # Comment out SSL lines in configs temporarily (will be configured by certbot)
 echo "  → Preparing Nginx configs for SSL setup..."
@@ -426,7 +442,9 @@ sudo ln -sf /etc/nginx/sites-available/api-ilmiyfaoliyat.conf /etc/nginx/sites-e
 # Test and reload nginx (HTTP only first)
 echo "  → Testing Nginx configuration (HTTP only)..."
 if sudo nginx -t; then
-    sudo systemctl reload nginx || sudo systemctl restart nginx
+    # Start nginx if not running, then reload
+    sudo systemctl start nginx 2>/dev/null || true
+    sudo systemctl reload nginx 2>/dev/null || sudo systemctl restart nginx
     echo "  ✅ Nginx reloaded successfully (HTTP only)"
 else
     echo "  ⚠️  Nginx test failed, check configuration manually"
@@ -436,11 +454,24 @@ fi
 
 # SSL certificate setup (first time only)
 echo "🔒 Setting up SSL certificates..."
-if sudo certbot --nginx -d ilmiyfaoliyat.uz -d www.ilmiyfaoliyat.uz -d api.ilmiyfaoliyat.uz --non-interactive --agree-tos --email admin@ilmiyfaoliyat.uz --redirect 2>&1 | tail -10; then
+SSL_OUTPUT=$(sudo certbot --nginx -d ilmiyfaoliyat.uz -d www.ilmiyfaoliyat.uz -d api.ilmiyfaoliyat.uz --non-interactive --agree-tos --email admin@ilmiyfaoliyat.uz --redirect 2>&1)
+echo "$SSL_OUTPUT" | tail -10
+
+# Check if certbot created a new config file (phoenix) and merge it if needed
+if [ -f /etc/nginx/sites-enabled/phoenix ]; then
+    echo "  → Certbot created 'phoenix' config, checking if merge needed..."
+    # Certbot usually modifies existing configs, but if it created a new one, we should check
+    sudo rm -f /etc/nginx/sites-enabled/phoenix 2>/dev/null || true
+fi
+
+# Ensure nginx is running and reload config
+if echo "$SSL_OUTPUT" | grep -q "successfully enabled HTTPS"; then
     echo "  ✅ SSL certificates installed successfully"
-    sudo systemctl reload nginx
+    sudo systemctl start nginx 2>/dev/null || true
+    sudo systemctl reload nginx 2>/dev/null || sudo systemctl restart nginx
+    echo "  ✅ Nginx reloaded with SSL configuration"
 else
-    echo "  ⚠️  SSL setup failed or certificates already exist"
+    echo "  ⚠️  SSL setup may have issues, check output above"
     echo "  You can set up SSL manually later with: sudo certbot --nginx"
 fi
 
