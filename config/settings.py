@@ -179,12 +179,18 @@ SIMPLE_JWT = {
 
 # CORS Settings
 # Explicitly check for 'True' string (case-insensitive) - default to False for production
-cors_allow_all_env = os.getenv('CORS_ALLOW_ALL_ORIGINS', '').strip()
+cors_allow_all_env = os.getenv('CORS_ALLOW_ALL_ORIGINS', 'False').strip()
 if cors_allow_all_env:
     cors_allow_all = cors_allow_all_env.lower()
+    # Only set to True if explicitly 'true', '1', 'yes', or 'on'
+    # Any other value (including 'False', 'false', '', etc.) should be False
     CORS_ALLOW_ALL_ORIGINS = cors_allow_all in ('true', '1', 'yes', 'on')
 else:
     # Default to False if not set
+    CORS_ALLOW_ALL_ORIGINS = False
+
+# Force False in production if explicitly set to False in env
+if cors_allow_all_env.lower() in ('false', '0', 'no', 'off', ''):
     CORS_ALLOW_ALL_ORIGINS = False
 
 # Clean CORS_ALLOWED_ORIGINS - remove spaces and filter empty strings
