@@ -25,16 +25,22 @@ class UserViewSet(viewsets.ModelViewSet):
             return UserProfileSerializer
         return UserSerializer
     
+    def get_serializer_context(self):
+        """Add request to serializer context"""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+    
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def profile(self, request):
         """Get current user profile"""
-        serializer = UserProfileSerializer(request.user)
+        serializer = UserProfileSerializer(request.user, context={'request': request})
         return Response(serializer.data)
     
     @action(detail=False, methods=['put', 'patch'], permission_classes=[IsAuthenticated])
     def update_profile(self, request):
         """Update current user profile"""
-        serializer = UserSerializer(request.user, data=request.data, partial=True)
+        serializer = UserSerializer(request.user, data=request.data, partial=True, context={'request': request})
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
@@ -74,9 +80,9 @@ class UserViewSet(viewsets.ModelViewSet):
             ).count()
             journal_admin_stats.append({
                 'id': str(admin.id),
-                'first_name': admin.first_name,
-                'last_name': admin.last_name,
-                'avatar_url': admin.avatar_url.url if admin.avatar_url else None,
+                'first_name': admin.first_name or '',
+                'last_name': admin.last_name or '',
+                'avatar_url': admin.avatar_url.url if (admin.avatar_url and hasattr(admin.avatar_url, 'url')) else None,
                 'published_count': published_count
             })
         
@@ -112,7 +118,7 @@ def register(request):
         user = serializer.save()
         refresh = RefreshToken.for_user(user)
         return Response({
-            'user': UserSerializer(user).data,
+            'user': UserSerializer(user, context={'request': request}).data,
             'refresh': str(refresh),
             'access': str(refresh.access_token),
         }, status=status.HTTP_201_CREATED)
@@ -128,7 +134,7 @@ def login(request):
         user = serializer.validated_data['user']
         refresh = RefreshToken.for_user(user)
         return Response({
-            'user': UserSerializer(user).data,
+            'user': UserSerializer(user, context={'request': request}).data,
             'refresh': str(refresh),
             'access': str(refresh.access_token),
         })

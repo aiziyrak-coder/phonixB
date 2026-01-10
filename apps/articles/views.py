@@ -5,10 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from .models import Article, ArticleVersion, ActivityLog
 from .serializers import ArticleSerializer, CreateArticleSerializer, ArticleVersionSerializer
 from django.utils import timezone
-from apps.services import GeminiService
-
-# Initialize the Gemini service
-gemini_service = GeminiService()
+from apps.services import get_gemini_service
 
 
 class ArticleViewSet(viewsets.ModelViewSet):
@@ -74,6 +71,7 @@ class ArticleViewSet(viewsets.ModelViewSet):
         
         # Use the Gemini service to perform plagiarism check
         # For now, we'll use the simulation method, but in production this should use real plagiarism detection
+        gemini_service = get_gemini_service()
         if article.final_pdf_path:  # If there's a file to check
             # For now, use the simulation method from the Gemini service
             # In production, this would be replaced with a real plagiarism detection service

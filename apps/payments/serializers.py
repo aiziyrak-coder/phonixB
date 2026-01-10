@@ -17,8 +17,17 @@ class TransactionSerializer(serializers.ModelSerializer):
 class CreateTransactionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Transaction
-        fields = ('article', 'translation_request', 'amount', 'service_type')
+        fields = ('article', 'translation_request', 'amount', 'currency', 'service_type')
+        extra_kwargs = {
+            'article': {'required': False, 'allow_null': True},
+            'translation_request': {'required': False, 'allow_null': True},
+            'currency': {'required': False},
+            'amount': {'required': True},
+            'service_type': {'required': True},
+        }
     
-    def create(self, validated_data):
-        validated_data['user'] = self.context['request'].user
-        return super().create(validated_data)
+    def validate(self, attrs):
+        """Set default currency if not provided"""
+        if 'currency' not in attrs or not attrs['currency']:
+            attrs['currency'] = 'UZS'
+        return attrs

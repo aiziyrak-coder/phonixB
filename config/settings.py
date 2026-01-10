@@ -30,7 +30,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
     'corsheaders',
-    'django_cleanup',
+    # 'django_cleanup',  # Uncomment after installing: pip install django-cleanup
     
     # Local apps
     'apps.users',
@@ -123,7 +123,7 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-STATICFILES_DIRS = [BASE_DIR / 'static']
+STATICFILES_DIRS = [BASE_DIR / 'static'] if (BASE_DIR / 'static').exists() else []
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Media files
@@ -198,10 +198,11 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', 'AIzaSyBm02i-rm_XNVckLVGOKBqH1GH6tk4pFKE')
 
 # Click Payment Settings
-CLICK_MERCHANT_ID = os.getenv('CLICK_MERCHANT_ID', '')
-CLICK_SERVICE_ID = os.getenv('CLICK_SERVICE_ID', '')
-CLICK_SECRET_KEY = os.getenv('CLICK_SECRET_KEY', '')
-CLICK_MERCHANT_USER_ID = os.getenv('CLICK_MERCHANT_USER_ID', '')
+# PHOENIX service credentials (new integration from 2025-12-18)
+CLICK_MERCHANT_ID = os.getenv('CLICK_MERCHANT_ID', '45730')
+CLICK_SERVICE_ID = os.getenv('CLICK_SERVICE_ID', '89248')
+CLICK_SECRET_KEY = os.getenv('CLICK_SECRET_KEY', '08ClKUoBemAxyM')
+CLICK_MERCHANT_USER_ID = os.getenv('CLICK_MERCHANT_USER_ID', '72021')
 
 # Email Settings (for notifications)
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'

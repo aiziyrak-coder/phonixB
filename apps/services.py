@@ -113,5 +113,12 @@ class GeminiService:
         }
 
 
-# Singleton instance
-gemini_service = GeminiService()
+# Singleton instance - lazy initialization
+_gemini_service_instance = None
+
+def get_gemini_service():
+    """Get or create Gemini service singleton instance"""
+    global _gemini_service_instance
+    if _gemini_service_instance is None:
+        _gemini_service_instance = GeminiService()
+    return _gemini_service_instance
