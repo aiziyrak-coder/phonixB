@@ -17,7 +17,18 @@ sudo apt-get update -qq
 
 # Install dependencies if not installed
 echo "📦 Installing dependencies..."
-sudo apt-get install -y python3 python3-pip python3-venv nginx postgresql postgresql-contrib git curl certbot python3-certbot-nginx nodejs npm build-essential 2>/dev/null || true
+sudo apt-get install -y python3 python3-pip python3-venv nginx postgresql postgresql-contrib git curl certbot python3-certbot-nginx build-essential 2>/dev/null || true
+
+# Install Node.js and npm (fix conflict)
+echo "📦 Installing Node.js..."
+if ! command -v node &> /dev/null; then
+    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+    sudo apt-get install -y nodejs
+fi
+
+# Install Python build dependencies for Pillow
+echo "📦 Installing Python build dependencies..."
+sudo apt-get install -y python3-dev libjpeg-dev zlib1g-dev libfreetype6-dev liblcms2-dev libopenjp2-7 libtiff5-dev 2>/dev/null || true
 
 # Create deployment directory (if doesn't exist)
 echo "📁 Creating directories..."
@@ -49,6 +60,7 @@ fi
 
 source venv/bin/activate
 pip install --upgrade pip -q
+pip install --upgrade setuptools wheel -q
 pip install -r requirements.txt gunicorn -q
 
 # Setup environment file
