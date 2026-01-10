@@ -294,14 +294,34 @@ server {
 }
 NGINX_BACKEND
 
-# Enable sites
-sudo ln -sf /etc/nginx/sites-available/ilmiyfaoliyat.conf /etc/nginx/sites-enabled/ 2>/dev/null || true
-sudo ln -sf /etc/nginx/sites-available/api-ilmiyfaoliyat.conf /etc/nginx/sites-enabled/ 2>/dev/null || true
+# Enable sites (only if config files exist)
+echo "  → Enabling Nginx sites..."
+if [ -f /etc/nginx/sites-available/ilmiyfaoliyat.conf ]; then
+    sudo ln -sf /etc/nginx/sites-available/ilmiyfaoliyat.conf /etc/nginx/sites-enabled/
+    echo "  ✅ Frontend config enabled"
+else
+    echo "  ⚠️  Frontend config not found"
+fi
+
+if [ -f /etc/nginx/sites-available/api-ilmiyfaoliyat.conf ]; then
+    sudo ln -sf /etc/nginx/sites-available/api-ilmiyfaoliyat.conf /etc/nginx/sites-enabled/
+    echo "  ✅ Backend config enabled"
+else
+    echo "  ⚠️  Backend config not found"
+fi
+
+# Remove default site
 sudo rm -f /etc/nginx/sites-enabled/default
 
 # Test and reload nginx
 echo "  → Testing Nginx configuration..."
-sudo nginx -t && sudo systemctl reload nginx || echo "  ⚠️  Nginx test failed, check configuration manually"
+if sudo nginx -t; then
+    sudo systemctl reload nginx
+    echo "  ✅ Nginx reloaded successfully"
+else
+    echo "  ⚠️  Nginx test failed, check configuration manually"
+    echo "  Check logs: sudo nginx -t"
+fi
 
 # SSL certificate setup (first time only)
 echo "🔒 Setting up SSL certificates..."
