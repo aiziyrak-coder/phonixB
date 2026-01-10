@@ -73,12 +73,18 @@ pip install -r requirements_temp.txt gunicorn -q
 # Install Pillow separately with workaround for Python 3.13
 echo "📦 Installing Pillow (Python 3.13 compatible version)..."
 pip install --upgrade setuptools pip wheel -q || true
-pip install "Pillow>=10.3.0" --no-build-isolation --no-cache-dir -q 2>&1 | tail -5 || \
-pip install "Pillow>=10.0.0" --no-build-isolation --no-cache-dir -q 2>&1 | tail -5 || \
-pip install Pillow --no-build-isolation --no-cache-dir -q 2>&1 | tail -5 || \
-echo "⚠️  Pillow installation failed, trying alternative method..." && \
-pip install --no-build-isolation --no-cache-dir --no-deps Pillow -q && \
-pip install Pillow -q
+
+# Try multiple methods to install Pillow for Python 3.13
+if pip install "Pillow>=10.4.0" --no-build-isolation --no-cache-dir -q 2>&1 | grep -q "Successfully installed"; then
+    echo "✅ Pillow installed successfully"
+elif pip install "Pillow>=10.3.0" --no-build-isolation --no-cache-dir -q 2>&1 | grep -q "Successfully installed"; then
+    echo "✅ Pillow installed successfully"
+elif pip install "Pillow>=10.0.0" --no-build-isolation --no-cache-dir -q 2>&1 | grep -q "Successfully installed"; then
+    echo "✅ Pillow installed successfully"
+else
+    echo "⚠️  Pillow installation failed - skipping for now (can install manually later)"
+    echo "   To install manually later, run: pip install Pillow --no-build-isolation"
+fi
 
 # Clean up
 rm -f requirements_temp.txt
