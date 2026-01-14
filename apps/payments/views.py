@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.views import APIView
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
 from django.utils.decorators import method_decorator
 import json
 from django.http import JsonResponse
@@ -163,6 +164,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
 
 
 @csrf_exempt
+@require_http_methods(["GET", "POST"])
 def click_prepare_view(request):
     """Handle Click prepare requests (callback from Click after user initiates payment)"""
     # Handle GET requests (for URL validation by Click merchant panel)
@@ -195,6 +197,7 @@ def click_prepare_view(request):
 
 
 @csrf_exempt
+@require_http_methods(["GET", "POST"])
 def click_complete_view(request):
     """Handle Click complete requests (callback from Click after payment is completed)"""
     # Handle GET requests (for URL validation by Click merchant panel)
