@@ -162,8 +162,6 @@ class TransactionViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@api_view(['GET', 'POST'])
-@permission_classes([AllowAny])
 @csrf_exempt
 def click_prepare_view(request):
     """Handle Click prepare requests (callback from Click after user initiates payment)"""
@@ -173,10 +171,14 @@ def click_prepare_view(request):
         return JsonResponse({'status': 'ok', 'message': 'Prepare endpoint is active'}, status=200)
     
     # Handle POST requests (actual callbacks)
+    if request.method != 'POST':
+        return JsonResponse({'error': -1, 'error_note': 'Method not allowed'}, status=405)
+    
     try:
         # Click sends data as form data or JSON
-        if request.content_type == 'application/json':
-            data = request.data
+        if request.content_type and 'application/json' in request.content_type:
+            import json
+            data = json.loads(request.body) if request.body else {}
         else:
             data = request.POST.dict()
         
@@ -192,8 +194,6 @@ def click_prepare_view(request):
         return JsonResponse({'error': -9, 'error_note': str(e)}, status=400)
 
 
-@api_view(['GET', 'POST'])
-@permission_classes([AllowAny])
 @csrf_exempt
 def click_complete_view(request):
     """Handle Click complete requests (callback from Click after payment is completed)"""
@@ -203,10 +203,14 @@ def click_complete_view(request):
         return JsonResponse({'status': 'ok', 'message': 'Complete endpoint is active'}, status=200)
     
     # Handle POST requests (actual callbacks)
+    if request.method != 'POST':
+        return JsonResponse({'error': -1, 'error_note': 'Method not allowed'}, status=405)
+    
     try:
         # Click sends data as form data or JSON
-        if request.content_type == 'application/json':
-            data = request.data
+        if request.content_type and 'application/json' in request.content_type:
+            import json
+            data = json.loads(request.body) if request.body else {}
         else:
             data = request.POST.dict()
         
