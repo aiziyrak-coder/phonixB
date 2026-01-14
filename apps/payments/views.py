@@ -162,11 +162,17 @@ class TransactionViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@api_view(['POST'])
+@api_view(['GET', 'POST'])
 @permission_classes([AllowAny])
 @csrf_exempt
 def click_prepare_view(request):
     """Handle Click prepare requests (callback from Click after user initiates payment)"""
+    # Handle GET requests (for URL validation by Click merchant panel)
+    if request.method == 'GET':
+        logger.info(f"Click prepare GET request received (URL validation)")
+        return JsonResponse({'status': 'ok', 'message': 'Prepare endpoint is active'}, status=200)
+    
+    # Handle POST requests (actual callbacks)
     try:
         # Click sends data as form data or JSON
         if request.content_type == 'application/json':
@@ -186,11 +192,17 @@ def click_prepare_view(request):
         return JsonResponse({'error': -9, 'error_note': str(e)}, status=400)
 
 
-@api_view(['POST'])
+@api_view(['GET', 'POST'])
 @permission_classes([AllowAny])
 @csrf_exempt
 def click_complete_view(request):
     """Handle Click complete requests (callback from Click after payment is completed)"""
+    # Handle GET requests (for URL validation by Click merchant panel)
+    if request.method == 'GET':
+        logger.info(f"Click complete GET request received (URL validation)")
+        return JsonResponse({'status': 'ok', 'message': 'Complete endpoint is active'}, status=200)
+    
+    # Handle POST requests (actual callbacks)
     try:
         # Click sends data as form data or JSON
         if request.content_type == 'application/json':
