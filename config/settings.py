@@ -234,6 +234,10 @@ CORS_ALLOW_HEADERS = [
     'x-api-key',
 ]
 
+# Ensure CORS middleware handles OPTIONS preflight correctly
+CORS_PREFLIGHT_MAX_AGE = 3600
+CORS_EXPOSE_HEADERS = ['Content-Type', 'X-CSRFToken']
+
 # Additional CORS settings for better compatibility
 # Note: These are optional and may not be supported in all django-cors-headers versions
 # CORS_PREFLIGHT_MAX_AGE = 3600  # Optional: Preflight cache time
