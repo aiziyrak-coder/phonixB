@@ -6,6 +6,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model
 from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Count, Q, Sum
+from django.conf import settings
 from apps.articles.models import Article
 from apps.payments.models import Transaction
 from apps.journals.models import Journal
