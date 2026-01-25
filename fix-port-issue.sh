@@ -1,6 +1,7 @@
 #!/bin/bash
 # Port 8000 muammosini tuzatish
 # Bu script port 8000'ni ishlatayotgan process'larni topib o'chiradi
+# EHTIYOTKORLIK: Faqat phoenix-backend service'ga tegishli process'larni o'chiradi
 
 set -e
 
@@ -13,29 +14,44 @@ sudo systemctl stop phoenix-backend
 sleep 2
 
 # 2. Port 8000'ni ishlatayotgan process'larni topish va o'chirish
+# Faqat phoenix-backend'ga tegishli process'larni o'chirish
 echo "  → Port 8000'ni ishlatayotgan process'larni topish..."
 PORT_PIDS=$(sudo lsof -ti:8000 2>/dev/null || echo "")
 
 if [ -n "$PORT_PIDS" ]; then
     echo "  ⚠️  Port 8000'ni ishlatayotgan process'lar topildi: $PORT_PIDS"
-    echo "  → Process'larni o'chirish..."
-    echo "$PORT_PIDS" | xargs -r sudo kill -9 2>/dev/null || true
-    sleep 2
-    echo "  ✅ Process'lar o'chirildi"
+    # Faqat phoenix-backend'ga tegishli process'larni filtrlash
+    PHOENIX_PIDS=""
+    for PID in $PORT_PIDS; do
+        if ps -p $PID -o cmd= 2>/dev/null | grep -q "/phonix/backend"; then
+            PHOENIX_PIDS="$PHOENIX_PIDS $PID"
+        fi
+    done
+    
+    if [ -n "$PHOENIX_PIDS" ]; then
+        echo "  → Phoenix backend process'larni o'chirish: $PHOENIX_PIDS"
+        echo "$PHOENIX_PIDS" | xargs -r sudo kill -9 2>/dev/null || true
+        sleep 2
+        echo "  ✅ Phoenix backend process'lar o'chirildi"
+    else
+        echo "  ⚠️  Port 8000'ni boshqa dastur ishlatmoqda - o'chirilmaydi"
+        echo "  → Service'ni to'xtatish kifoya"
+    fi
 else
     echo "  ✅ Port 8000 bo'sh"
 fi
 
-# 3. Barcha gunicorn process'larni o'chirish
-echo "  → Barcha gunicorn process'larni o'chirish..."
-GUNICORN_PIDS=$(pgrep -f gunicorn || echo "")
-if [ -n "$GUNICORN_PIDS" ]; then
-    echo "  ⚠️  Gunicorn process'lar topildi: $GUNICORN_PIDS"
-    echo "$GUNICORN_PIDS" | xargs -r sudo kill -9 2>/dev/null || true
+# 3. Faqat phoenix-backend'ga tegishli gunicorn process'larni o'chirish
+echo "  → Phoenix backend gunicorn process'larni o'chirish..."
+# Faqat /phonix/backend yo'lidagi gunicorn process'larni topish
+PHOENIX_GUNICORN_PIDS=$(pgrep -f "gunicorn.*phonix.*backend" || pgrep -f "gunicorn.*config.wsgi" | xargs -I {} sh -c 'ps -p {} -o cmd= | grep -q "/phonix/backend" && echo {}' || echo "")
+if [ -n "$PHOENIX_GUNICORN_PIDS" ]; then
+    echo "  ⚠️  Phoenix backend gunicorn process'lar topildi: $PHOENIX_GUNICORN_PIDS"
+    echo "$PHOENIX_GUNICORN_PIDS" | xargs -r sudo kill -9 2>/dev/null || true
     sleep 2
-    echo "  ✅ Gunicorn process'lar o'chirildi"
+    echo "  ✅ Phoenix backend gunicorn process'lar o'chirildi"
 else
-    echo "  ✅ Gunicorn process'lar yo'q"
+    echo "  ✅ Phoenix backend gunicorn process'lar yo'q"
 fi
 
 # 4. Port'ni qayta tekshirish
