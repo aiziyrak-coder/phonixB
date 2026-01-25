@@ -239,9 +239,11 @@ CORS_PREFLIGHT_MAX_AGE = 3600
 CORS_EXPOSE_HEADERS = ['Content-Type', 'X-CSRFToken']
 
 # Additional CORS settings for better compatibility
-# Note: These are optional and may not be supported in all django-cors-headers versions
-# CORS_PREFLIGHT_MAX_AGE = 3600  # Optional: Preflight cache time
-# CORS_EXPOSE_HEADERS = ['Content-Type', 'X-CSRFToken']  # Optional: Exposed headers
+CORS_PREFLIGHT_MAX_AGE = 3600  # Preflight cache time (1 hour)
+CORS_EXPOSE_HEADERS = ['Content-Type', 'X-CSRFToken']  # Exposed headers
+
+# Ensure CORS middleware processes OPTIONS requests correctly
+# This is handled automatically by corsheaders, but we ensure settings are correct
 
 # File Upload Settings
 FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
