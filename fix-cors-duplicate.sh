@@ -22,17 +22,21 @@ echo "✓ Backup created"
 echo "Removing CORS headers from Nginx (Django will handle them)..."
 echo ""
 
-# Remove CORS headers from location / block
-sudo sed -i '/add_header.*Access-Control-Allow-Origin/d' "$NGINX_CONFIG"
-sudo sed -i '/add_header.*Access-Control-Allow-Methods/d' "$NGINX_CONFIG"
-sudo sed -i '/add_header.*Access-Control-Allow-Headers/d' "$NGINX_CONFIG"
-sudo sed -i '/add_header.*Access-Control-Allow-Credentials/d' "$NGINX_CONFIG"
-sudo sed -i '/add_header.*Access-Control-Max-Age/d' "$NGINX_CONFIG"
+# Remove CORS headers from actual requests (location / block), but keep OPTIONS preflight
+# This way Django CORS middleware handles actual requests, and Nginx handles OPTIONS preflight
 
-# Keep only the OPTIONS preflight handling, but remove duplicate headers
-# We'll keep the OPTIONS block but let Django handle the actual CORS headers
+# Remove CORS headers from location / block (actual requests)
+# But keep them in OPTIONS if block for preflight
+sudo sed -i '/^[[:space:]]*add_header.*Access-Control-Allow-Origin.*always;$/d' "$NGINX_CONFIG"
+sudo sed -i '/^[[:space:]]*add_header.*Access-Control-Allow-Methods.*always;$/d' "$NGINX_CONFIG"
+sudo sed -i '/^[[:space:]]*add_header.*Access-Control-Allow-Headers.*always;$/d' "$NGINX_CONFIG"
+sudo sed -i '/^[[:space:]]*add_header.*Access-Control-Allow-Credentials.*always;$/d' "$NGINX_CONFIG"
 
-echo "✓ Removed CORS headers from Nginx"
+# However, we need to ensure OPTIONS preflight still works
+# Let's keep OPTIONS handling but let Django handle actual requests
+
+echo "✓ Removed duplicate CORS headers from actual requests"
+echo "  OPTIONS preflight will be handled by Django CORS middleware"
 
 # Test Nginx configuration
 echo ""
