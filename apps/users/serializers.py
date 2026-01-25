@@ -194,32 +194,65 @@ class LoginSerializer(serializers.Serializer):
             raise serializers.ValidationError({'phone': ['Telefon raqam noto\'g\'ri formatda']})
         
         # Ensure phone number is in 998XXXXXXXXX format (12 digits)
+        # Handle different phone number formats
         if len(phone_digits) == 9:
+            # 9 digits: 901234567 -> 998901234567
             phone_digits = '998' + phone_digits
         elif len(phone_digits) == 10 and phone_digits.startswith('9'):
+            # 10 digits starting with 9: 9901234567 -> 998901234567
             phone_digits = '998' + phone_digits
-        elif len(phone_digits) == 11 and phone_digits.startswith('998'):
-            pass  # Already in correct format
-        elif len(phone_digits) == 12 and phone_digits.startswith('998'):
-            pass  # Already in correct format
+        elif len(phone_digits) == 11:
+            # 11 digits: could be 99890123456 (missing last digit) or 99012345678
+            if phone_digits.startswith('998'):
+                # Already has 998 prefix, might be missing last digit
+                pass
+            else:
+                # Add 998 prefix
+                phone_digits = '998' + phone_digits[-9:]  # Take last 9 digits
+        elif len(phone_digits) == 12:
+            # 12 digits: should be 998901234567
+            if not phone_digits.startswith('998'):
+                # If doesn't start with 998, take last 9 digits and add 998
+                phone_digits = '998' + phone_digits[-9:]
+        elif len(phone_digits) > 12:
+            # More than 12 digits: take last 12 digits
+            phone_digits = phone_digits[-12:]
+        
+        # Final validation: should be 12 digits starting with 998
+        if len(phone_digits) != 12 or not phone_digits.startswith('998'):
+            raise serializers.ValidationError({'phone': ['Telefon raqam noto\'g\'ri formatda. Format: 998XXXXXXXXX']})
         
         # Try to authenticate with different phone formats
         # Database may store phone with + or without +
         user = None
         
-        # Try 1: With + prefix (most common in database)
+        # Try 1: With + prefix (most common in database) - 998XXXXXXXXX format
         user = authenticate(request=self.context.get('request'),
                           username=f'+{phone_digits}', password=password)
         
-        # Try 2: Without + prefix
+        # Try 2: Without + prefix - 998XXXXXXXXX format
         if not user:
             user = authenticate(request=self.context.get('request'),
                               username=phone_digits, password=password)
         
-        # Try 3: Original format if it was different
+        # Try 3: With + prefix but without country code - 9XXXXXXXX format (if phone_digits is 12, try last 9)
+        if not user and len(phone_digits) == 12:
+            last_9_digits = phone_digits[-9:]
+            user = authenticate(request=self.context.get('request'),
+                              username=f'+{last_9_digits}', password=password)
+            if not user:
+                user = authenticate(request=self.context.get('request'),
+                                  username=last_9_digits, password=password)
+        
+        # Try 4: Original format if it was different
         if not user and phone != phone_digits and phone != f'+{phone_digits}':
+            # Try original phone as-is
             user = authenticate(request=self.context.get('request'),
                               username=phone, password=password)
+            # Try original phone with + prefix
+            if not user and not phone.startswith('+'):
+                user = authenticate(request=self.context.get('request'),
+                                  username=f'+{phone}', password=password)
         
         if not user:
             raise serializers.ValidationError({'non_field_errors': ['Telefon raqam yoki parol noto\'g\'ri']})

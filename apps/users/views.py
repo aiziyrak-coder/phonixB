@@ -228,13 +228,26 @@ def register(request):
 @csrf_exempt
 def login(request):
     """Login user"""
-    serializer = LoginSerializer(data=request.data, context={'request': request})
-    if serializer.is_valid():
-        user = serializer.validated_data['user']
-        refresh = RefreshToken.for_user(user)
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        logger.info(f"Login request received: phone={request.data.get('phone', 'N/A')[:10]}...")
+        serializer = LoginSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            user = serializer.validated_data['user']
+            refresh = RefreshToken.for_user(user)
+            logger.info(f"Login successful for user: {user.phone}")
+            return Response({
+                'user': UserSerializer(user, context={'request': request}).data,
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+            })
+        else:
+            logger.warning(f"Login validation failed: {serializer.errors}")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Login exception: {str(e)}", exc_info=True)
         return Response({
-            'user': UserSerializer(user, context={'request': request}).data,
-            'refresh': str(refresh),
-            'access': str(refresh.access_token),
-        })
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            'non_field_errors': ['Tizimga kirishda xatolik yuz berdi. Iltimos, qayta urinib ko\'ring.']
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
