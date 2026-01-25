@@ -182,16 +182,26 @@ class LoginSerializer(serializers.Serializer):
         password = attrs.get('password')
         
         if not phone or not password:
-            raise serializers.ValidationError({'non_field_errors': ['Must include phone and password']})
+            raise serializers.ValidationError({'non_field_errors': ['Telefon raqam va parol kiritilishi shart']})
         
         if not password or not password.strip():
-            raise serializers.ValidationError({'non_field_errors': ['Password cannot be empty']})
+            raise serializers.ValidationError({'non_field_errors': ['Parol bo\'sh bo\'lishi mumkin emas']})
         
         # Normalize phone number - extract only digits
         phone_digits = ''.join(filter(str.isdigit, str(phone).strip()))
         
         if not phone_digits or len(phone_digits) < 9:
-            raise serializers.ValidationError({'non_field_errors': ['Invalid phone number format']})
+            raise serializers.ValidationError({'phone': ['Telefon raqam noto\'g\'ri formatda']})
+        
+        # Ensure phone number is in 998XXXXXXXXX format (12 digits)
+        if len(phone_digits) == 9:
+            phone_digits = '998' + phone_digits
+        elif len(phone_digits) == 10 and phone_digits.startswith('9'):
+            phone_digits = '998' + phone_digits
+        elif len(phone_digits) == 11 and phone_digits.startswith('998'):
+            pass  # Already in correct format
+        elif len(phone_digits) == 12 and phone_digits.startswith('998'):
+            pass  # Already in correct format
         
         # Try to authenticate with different phone formats
         # Database may store phone with + or without +
