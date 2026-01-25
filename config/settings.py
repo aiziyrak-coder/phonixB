@@ -194,8 +194,13 @@ if cors_allow_all_lower in ('true', '1', 'yes', 'on'):
     CORS_ALLOW_ALL_ORIGINS = True
 
 # Clean CORS_ALLOWED_ORIGINS - remove spaces and filter empty strings
+# Production origins
 cors_origins_env = os.getenv('CORS_ALLOWED_ORIGINS', 'https://ilmiyfaoliyat.uz,http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173')
 CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins_env.split(',') if origin.strip()]
+
+# Ensure production origin is always included
+if 'https://ilmiyfaoliyat.uz' not in CORS_ALLOWED_ORIGINS:
+    CORS_ALLOWED_ORIGINS.append('https://ilmiyfaoliyat.uz')
 
 # If CORS_ALLOW_ALL_ORIGINS is True, clear CORS_ALLOWED_ORIGINS (django-cors-headers behavior)
 if CORS_ALLOW_ALL_ORIGINS:
@@ -223,6 +228,10 @@ CORS_ALLOW_HEADERS = [
     'x-requested-with',
     'x-api-key',
 ]
+
+# Additional CORS settings for better compatibility
+CORS_PREFLIGHT_MAX_AGE = 3600
+CORS_EXPOSE_HEADERS = ['Content-Type', 'X-CSRFToken']
 
 # File Upload Settings
 FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
