@@ -8,6 +8,9 @@ set -e
 echo "🔧 Port 8000 muammosini tuzatish..."
 echo ""
 
+echo "🔧 Port 8000 muammosini tuzatish..."
+echo ""
+
 # 1. Service'ni to'xtatish
 echo "  → Backend service'ni to'xtatish..."
 sudo systemctl stop phoenix-backend
@@ -88,11 +91,27 @@ fi
 # 7. Port tekshirish
 echo ""
 echo "  → Port 8000 tekshirish..."
+sleep 2  # Kichik kutish
 if sudo lsof -ti:8000 >/dev/null 2>&1; then
     PORT_PID=$(sudo lsof -ti:8000)
     echo "  ✅ Port 8000 ishlatilmoqda (PID: $PORT_PID)"
+    
+    # Port'ni ishlatayotgan process phoenix-backend'ga tegishli ekanligini tekshirish
+    if ps -p $PORT_PID -o cmd= 2>/dev/null | grep -q "/phonix/backend"; then
+        echo "  ✅ Port phoenix-backend tomonidan ishlatilmoqda"
+    else
+        echo "  ⚠️  Port boshqa process tomonidan ishlatilmoqda"
+    fi
 else
-    echo "  ⚠️  Port 8000 hali ham bo'sh - service ishlamayapti"
+    echo "  ⚠️  Port 8000 bo'sh - service ishlamayapti"
+    echo "  → Service'ni qayta ishga tushirish..."
+    sudo systemctl start phoenix-backend
+    sleep 3
+    if sudo systemctl is-active --quiet phoenix-backend; then
+        echo "  ✅ Service muvaffaqiyatli ishga tushdi"
+    else
+        echo "  ❌ Service ishga tushmadi"
+    fi
 fi
 
 echo ""
