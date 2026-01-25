@@ -172,7 +172,7 @@ def click_prepare_view(request):
     """Handle Click prepare requests (callback from Click after user initiates payment)"""
     # Handle GET requests (for URL validation by Click merchant panel)
     if request.method == 'GET':
-        logger.info(f"Click prepare GET request received (URL validation)")
+        logger.info(f"Click prepare GET request received (URL validation) from {request.META.get('REMOTE_ADDR', 'unknown')}")
         return JsonResponse({'status': 'ok', 'message': 'Prepare endpoint is active'}, status=200)
     
     # Handle POST requests (actual callbacks)
@@ -180,14 +180,35 @@ def click_prepare_view(request):
         return JsonResponse({'error': -1, 'error_note': 'Method not allowed'}, status=405)
     
     try:
-        # Click sends data as form data or JSON
+        # Log request details for debugging
+        logger.info(f"Click prepare POST request received from {request.META.get('REMOTE_ADDR', 'unknown')}")
+        logger.info(f"Content-Type: {request.content_type}")
+        logger.info(f"Request body: {request.body[:500] if request.body else 'Empty'}")
+        
+        # Click sends data as form data (application/x-www-form-urlencoded) or JSON
+        data = {}
         if request.content_type and 'application/json' in request.content_type:
             import json
-            data = json.loads(request.body) if request.body else {}
+            if request.body:
+                data = json.loads(request.body.decode('utf-8'))
+                logger.info(f"Parsed JSON data: {data}")
         else:
-            data = request.POST.dict()
+            # Form data (Click typically sends form data)
+            if request.POST:
+                data = request.POST.dict()
+                logger.info(f"Parsed form data: {data}")
+            elif request.body:
+                # Try to parse as form-encoded
+                from urllib.parse import parse_qs
+                parsed = parse_qs(request.body.decode('utf-8'))
+                data = {k: v[0] if len(v) == 1 else v for k, v in parsed.items()}
+                logger.info(f"Parsed form-encoded data: {data}")
         
-        logger.info(f"Click prepare request received: {data}")
+        if not data:
+            logger.warning("No data received in Click prepare request")
+            return JsonResponse({'error': -1, 'error_note': 'No data provided'}, status=400)
+        
+        logger.info(f"Click prepare request data: {data}")
         service = ClickPaymentService()
         result = service.handle_prepare(data)
         logger.info(f"Click prepare result: {result}")
@@ -205,7 +226,7 @@ def click_complete_view(request):
     """Handle Click complete requests (callback from Click after payment is completed)"""
     # Handle GET requests (for URL validation by Click merchant panel)
     if request.method == 'GET':
-        logger.info(f"Click complete GET request received (URL validation)")
+        logger.info(f"Click complete GET request received (URL validation) from {request.META.get('REMOTE_ADDR', 'unknown')}")
         return JsonResponse({'status': 'ok', 'message': 'Complete endpoint is active'}, status=200)
     
     # Handle POST requests (actual callbacks)
@@ -213,14 +234,35 @@ def click_complete_view(request):
         return JsonResponse({'error': -1, 'error_note': 'Method not allowed'}, status=405)
     
     try:
-        # Click sends data as form data or JSON
+        # Log request details for debugging
+        logger.info(f"Click complete POST request received from {request.META.get('REMOTE_ADDR', 'unknown')}")
+        logger.info(f"Content-Type: {request.content_type}")
+        logger.info(f"Request body: {request.body[:500] if request.body else 'Empty'}")
+        
+        # Click sends data as form data (application/x-www-form-urlencoded) or JSON
+        data = {}
         if request.content_type and 'application/json' in request.content_type:
             import json
-            data = json.loads(request.body) if request.body else {}
+            if request.body:
+                data = json.loads(request.body.decode('utf-8'))
+                logger.info(f"Parsed JSON data: {data}")
         else:
-            data = request.POST.dict()
+            # Form data (Click typically sends form data)
+            if request.POST:
+                data = request.POST.dict()
+                logger.info(f"Parsed form data: {data}")
+            elif request.body:
+                # Try to parse as form-encoded
+                from urllib.parse import parse_qs
+                parsed = parse_qs(request.body.decode('utf-8'))
+                data = {k: v[0] if len(v) == 1 else v for k, v in parsed.items()}
+                logger.info(f"Parsed form-encoded data: {data}")
         
-        logger.info(f"Click complete request received: {data}")
+        if not data:
+            logger.warning("No data received in Click complete request")
+            return JsonResponse({'error': -1, 'error_note': 'No data provided'}, status=400)
+        
+        logger.info(f"Click complete request data: {data}")
         service = ClickPaymentService()
         result = service.handle_complete(data)
         logger.info(f"Click complete result: {result}")
