@@ -80,6 +80,7 @@ fi
 echo ""
 echo "3. Checking CORS Configuration..."
 echo "----------------------------------------"
+source venv/bin/activate
 python manage.py shell << 'EOF'
 from django.conf import settings
 
