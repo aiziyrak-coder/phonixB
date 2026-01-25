@@ -511,6 +511,31 @@ class ClickPaymentService:
             
             # Return error - invoice creation failed, cannot proceed
             # Frontend should display error message to user
+            # Map Click error codes to user-friendly messages
+            user_friendly_message = f'To\'lov amalga oshirilmadi.'
+            
+            # Common Click error codes and their meanings
+            if invoice_error_code == -1:
+                user_friendly_message = f'To\'lov amalga oshirilmadi. Iltimos, telefon raqamingizni ({phone_number}) tekshiring va Click tizimida ro\'yxatdan o\'tgan bo\'lishi kerak.'
+            elif invoice_error_code == -2:
+                user_friendly_message = 'To\'lov miqdori noto\'g\'ri. Iltimos, qayta urinib ko\'ring.'
+            elif invoice_error_code == -3:
+                user_friendly_message = 'Foydalanuvchi topilmadi. Iltimos, telefon raqamingizni Click tizimida ro\'yxatdan o\'tkazing.'
+            elif invoice_error_code == -4:
+                user_friendly_message = 'To\'lov allaqachon amalga oshirilgan.'
+            elif invoice_error_code == -5:
+                user_friendly_message = 'Tranzaksiya topilmadi. Iltimos, qayta urinib ko\'ring.'
+            elif invoice_error_code == -6:
+                user_friendly_message = 'To\'lov bekor qilindi.'
+            elif invoice_error_code == -7:
+                user_friendly_message = 'To\'lov vaqti tugagan. Iltimos, qayta urinib ko\'ring.'
+            elif invoice_error_code == -8:
+                user_friendly_message = 'To\'lov holati noma\'lum. Iltimos, qayta urinib ko\'ring.'
+            elif invoice_error_code == -9:
+                user_friendly_message = 'Server xatolik. Iltimos, keyinroq qayta urinib ko\'ring.'
+            else:
+                user_friendly_message = f'To\'lov amalga oshirilmadi: {error_note}. Iltimos, telefon raqamingizni ({phone_number}) Click tizimida ro\'yxatdan o\'tkazing.'
+            
             return {
                 'error_code': invoice_error_code if invoice_error_code != -1 else -514,  # Return actual error code or -514 (user not registered)
                 'error_note': f'Invoice yaratib bo\'lmadi: {error_note}. User\'ning telefon raqami ({phone_number}) Click tizimida ro\'yxatdan o\'tgan bo\'lishi kerak.',
@@ -520,7 +545,7 @@ class ClickPaymentService:
                 'amount': float(transaction.amount),
                 'service_id': service_id_int,
                 'details': invoice_result,
-                'user_message': f'To\'lov amalga oshirilmadi. Iltimos, telefon raqamingizni ({phone_number}) Click tizimida ro\'yxatdan o\'tkazing. Xatolik: {error_note}'
+                'user_message': user_friendly_message
             }
     
     def handle_prepare(self, data):
@@ -593,7 +618,8 @@ class ClickPaymentService:
             }
             
         except Exception as e:
-            return {'error': -9, 'error_note': str(e)}
+            logger.error(f"Error in handle_prepare: {str(e)}", exc_info=True)
+            return {'error': -9, 'error_note': f'Server xatolik: {str(e)}'}
     
     def handle_complete(self, data):
         """Handle Click complete request
@@ -646,7 +672,9 @@ class ClickPaymentService:
             }
             
         except Transaction.DoesNotExist:
+            logger.error(f"Transaction not found in handle_complete: merchant_trans_id={merchant_trans_id}")
             return {'error': -5, 'error_note': 'Transaction not found'}
         except Exception as e:
             import traceback
-            return {'error': -9, 'error_note': f'{str(e)}\n{traceback.format_exc()}'}
+            logger.error(f"Error in handle_complete: {str(e)}", exc_info=True)
+            return {'error': -9, 'error_note': f'Server xatolik: {str(e)}'}
