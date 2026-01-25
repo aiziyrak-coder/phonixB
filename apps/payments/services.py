@@ -526,11 +526,15 @@ class ClickPaymentService:
     def handle_prepare(self, data):
         """Handle Click prepare request
         According to Click API documentation:
-        sign_string = md5(click_trans_id + service_id + merchant_trans_id + amount + action + sign_time + secret_key)
+        If click_paydoc_id exists:
+            sign_string = md5(click_trans_id + service_id + click_paydoc_id + merchant_trans_id + amount + action + sign_time + secret_key)
+        Otherwise:
+            sign_string = md5(click_trans_id + service_id + merchant_trans_id + amount + action + sign_time + secret_key)
         """
         try:
             click_trans_id = data.get('click_trans_id')
             service_id = data.get('service_id')
+            click_paydoc_id = data.get('click_paydoc_id')  # May be present in prepare callback
             merchant_trans_id = data.get('merchant_trans_id')
             amount = data.get('amount')
             action = data.get('action')
@@ -538,12 +542,24 @@ class ClickPaymentService:
             sign_string = data.get('sign_string')
             
             # Verify signature - order is important!
-            # sign_string = md5(click_trans_id + service_id + merchant_trans_id + amount + action + sign_time + secret_key)
-            expected_sign = self.generate_signature(
-                click_trans_id, service_id, merchant_trans_id, amount, action, sign_time
-            )
+            # If click_paydoc_id exists, include it in signature
+            if click_paydoc_id:
+                # sign_string = md5(click_trans_id + service_id + click_paydoc_id + merchant_trans_id + amount + action + sign_time + secret_key)
+                expected_sign = self.generate_signature(
+                    click_trans_id, service_id, click_paydoc_id, merchant_trans_id, amount, action, sign_time
+                )
+                logger.info(f"Prepare signature with click_paydoc_id: click_trans_id={click_trans_id}, service_id={service_id}, click_paydoc_id={click_paydoc_id}, merchant_trans_id={merchant_trans_id}, amount={amount}, action={action}, sign_time={sign_time}")
+            else:
+                # sign_string = md5(click_trans_id + service_id + merchant_trans_id + amount + action + sign_time + secret_key)
+                expected_sign = self.generate_signature(
+                    click_trans_id, service_id, merchant_trans_id, amount, action, sign_time
+                )
+                logger.info(f"Prepare signature without click_paydoc_id: click_trans_id={click_trans_id}, service_id={service_id}, merchant_trans_id={merchant_trans_id}, amount={amount}, action={action}, sign_time={sign_time}")
+            
+            logger.info(f"Expected signature: {expected_sign}, Received signature: {sign_string}")
             
             if sign_string != expected_sign:
+                logger.error(f"Signature mismatch! Expected: {expected_sign}, Got: {sign_string}")
                 return {'error': -1, 'error_note': 'Invalid signature'}
             
             # Find transaction - merchant_trans_id is UUID string, need to convert
@@ -562,6 +578,8 @@ class ClickPaymentService:
             
             # Save Click transaction ID and prepare status
             transaction.click_trans_id = click_trans_id
+            if click_paydoc_id:
+                transaction.click_paydoc_id = str(click_paydoc_id)
             transaction.merchant_trans_id = str(transaction.id) if not transaction.merchant_trans_id else transaction.merchant_trans_id
             transaction.status = 'pending'  # Still pending until complete
             transaction.save()

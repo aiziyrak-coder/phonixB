@@ -5,6 +5,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model
 from django.views.decorators.csrf import csrf_exempt
+from django.db.models import Count, Q, Sum
 from apps.articles.models import Article
 from apps.payments.models import Transaction
 from apps.journals.models import Journal
@@ -53,30 +54,50 @@ class UserViewSet(viewsets.ModelViewSet):
         if request.user.role != 'super_admin':
             return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
         
-        # Get user statistics
-        total_users = User.objects.count()
-        authors_count = User.objects.filter(role='author').count()
-        reviewers_count = User.objects.filter(role='reviewer').count()
+        # Optimize queries - use select_related and prefetch_related where possible
+        # Get user statistics (optimized with single query)
+        user_stats = User.objects.aggregate(
+            total=Count('id'),
+            authors=Count('id', filter=Q(role='author')),
+            reviewers=Count('id', filter=Q(role='reviewer'))
+        )
+        total_users = user_stats['total'] or 0
+        authors_count = user_stats['authors'] or 0
+        reviewers_count = user_stats['reviewers'] or 0
         
-        # Get article statistics
-        total_articles = Article.objects.count()
-        new_submissions = Article.objects.filter(status__in=['Yangi', 'WithEditor']).count()
-        in_review = Article.objects.filter(status='QabulQilingan').count()
-        published = Article.objects.filter(status='Published').count()
-        rejected = Article.objects.filter(status='Rejected').count()
+        # Get article statistics (optimized with single query)
+        article_stats = Article.objects.aggregate(
+            total=Count('id'),
+            new_submissions=Count('id', filter=Q(status__in=['Yangi', 'WithEditor'])),
+            in_review=Count('id', filter=Q(status='QabulQilingan')),
+            published=Count('id', filter=Q(status='Published')),
+            rejected=Count('id', filter=Q(status='Rejected'))
+        )
+        total_articles = article_stats['total'] or 0
+        new_submissions = article_stats['new_submissions'] or 0
+        in_review = article_stats['in_review'] or 0
+        published = article_stats['published'] or 0
+        rejected = article_stats['rejected'] or 0
         
-        # Get financial statistics
-        completed_transactions = Transaction.objects.filter(status='completed').exclude(service_type='top_up')
-        total_revenue = sum(abs(float(t.amount)) for t in completed_transactions)
+        # Get financial statistics (optimized)
+        financial_stats = Transaction.objects.filter(
+            status='completed'
+        ).exclude(
+            service_type='top_up'
+        ).aggregate(
+            total_revenue=Sum('amount'),
+            total_count=Count('id')
+        )
+        total_revenue = abs(float(financial_stats['total_revenue'] or 0))
+        total_transactions = financial_stats['total_count'] or 0
         
-        # Get journal admin statistics
-        journal_admins = User.objects.filter(role='journal_admin')
+        # Get journal admin statistics (optimized with select_related)
+        journal_admins = User.objects.filter(role='journal_admin').select_related()
         journal_admin_stats = []
         for admin in journal_admins:
-            managed_journals = Journal.objects.filter(journal_admin=admin.id)
-            managed_journal_ids = list(managed_journals.values_list('id', flat=True))
+            # Use optimized query with select_related
             published_count = Article.objects.filter(
-                journal__in=managed_journal_ids, 
+                journal__journal_admin=admin,
                 status='Published'
             ).count()
             journal_admin_stats.append({
@@ -102,7 +123,7 @@ class UserViewSet(viewsets.ModelViewSet):
             },
             'finance': {
                 'total_revenue': total_revenue,
-                'total_transactions': completed_transactions.count()
+                'total_transactions': total_transactions
             },
             'journal_admins': journal_admin_stats
         }
@@ -183,24 +204,23 @@ def register(request):
                             'error': error_msg
                         }, status=status.HTTP_400_BAD_REQUEST)
                 else:
+                    # Don't expose internal error details to user
+                    logger.error(f"Database error (non-IntegrityError): {str(db_error)}")
                     return Response({
-                        'detail': 'Registration failed',
-                        'error': str(db_error),
-                        'error_type': type(db_error).__name__
+                        'detail': 'Ro\'yxatdan o\'tishda xatolik yuz berdi. Iltimos, qayta urinib ko\'ring.',
                     }, status=status.HTTP_400_BAD_REQUEST)
         
-        logger.warning(f"❌ Registration validation failed: {serializer.errors}")
+        logger.warning(f"Registration validation failed: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         import traceback
         error_trace = traceback.format_exc()
-        logger.error(f"❌ Registration exception: {str(e)}")
+        logger.error(f"Registration exception: {str(e)}")
         logger.error(f"Traceback: {error_trace}")
+        # Don't expose internal error details to user
         return Response({
-            'detail': 'Registration failed',
-            'error': str(e),
-            'error_type': type(e).__name__
-        }, status=status.HTTP_400_BAD_REQUEST)
+            'detail': 'Ro\'yxatdan o\'tishda xatolik yuz berdi. Iltimos, qayta urinib ko\'ring.',
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])

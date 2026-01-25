@@ -57,13 +57,13 @@ class UserSerializer(serializers.ModelSerializer):
 class RegisterSerializer(serializers.ModelSerializer):
     """Serializer for user registration"""
     
-    password = serializers.CharField(write_only=True, min_length=6)
-    password_confirm = serializers.CharField(write_only=True, min_length=6)
+    password = serializers.CharField(write_only=True, min_length=8)
+    password_confirm = serializers.CharField(write_only=True, min_length=8)
     affiliation = serializers.CharField(required=False, allow_blank=True, default='')
-    phone = serializers.CharField(required=True)
-    email = serializers.EmailField(required=True)
-    first_name = serializers.CharField(required=True)
-    last_name = serializers.CharField(required=True)
+    phone = serializers.CharField(required=True, max_length=20)
+    email = serializers.EmailField(required=True, max_length=255)
+    first_name = serializers.CharField(required=True, max_length=150)
+    last_name = serializers.CharField(required=True, max_length=150)
     
     class Meta:
         model = User
@@ -73,22 +73,78 @@ class RegisterSerializer(serializers.ModelSerializer):
         )
     
     def validate_phone(self, value):
-        """Normalize phone number"""
+        """Normalize and validate phone number"""
         if not value:
-            raise serializers.ValidationError('Phone number is required')
+            raise serializers.ValidationError('Telefon raqam kiritilishi shart')
+        
         # Remove spaces and normalize
-        cleaned_phone = str(value).strip().replace(' ', '').replace('-', '')
-        if not cleaned_phone or len(cleaned_phone.replace('+', '')) < 9:
-            raise serializers.ValidationError('Invalid phone number format')
+        cleaned_phone = str(value).strip().replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
+        
+        # Remove + sign if present
+        if cleaned_phone.startswith('+'):
+            cleaned_phone = cleaned_phone[1:]
+        
+        # Validate phone number format (should be 9-12 digits)
+        if not cleaned_phone.isdigit():
+            raise serializers.ValidationError('Telefon raqam faqat raqamlardan iborat bo\'lishi kerak')
+        
+        if len(cleaned_phone) < 9 or len(cleaned_phone) > 12:
+            raise serializers.ValidationError('Telefon raqam noto\'g\'ri formatda')
+        
+        # Ensure it starts with 998 for Uzbekistan
+        if not cleaned_phone.startswith('998') and len(cleaned_phone) == 9:
+            cleaned_phone = '998' + cleaned_phone
+        
         return cleaned_phone
     
+    def validate_password(self, value):
+        """Validate password strength"""
+        if not value:
+            raise serializers.ValidationError('Parol kiritilishi shart')
+        
+        if len(value) < 8:
+            raise serializers.ValidationError('Parol kamida 8 ta belgidan iborat bo\'lishi kerak')
+        
+        # Check for at least one digit
+        if not any(char.isdigit() for char in value):
+            raise serializers.ValidationError('Parol kamida bitta raqamni o\'z ichiga olishi kerak')
+        
+        # Check for at least one letter
+        if not any(char.isalpha() for char in value):
+            raise serializers.ValidationError('Parol kamida bitta harfni o\'z ichiga olishi kerak')
+        
+        return value
+    
+    def validate_email(self, value):
+        """Validate email format"""
+        if not value:
+            raise serializers.ValidationError('Email kiritilishi shart')
+        
+        # Basic email validation (Django's EmailField already does this, but add extra check)
+        if '@' not in value or '.' not in value.split('@')[1]:
+            raise serializers.ValidationError('Email noto\'g\'ri formatda')
+        
+        return value.lower().strip()
+    
     def validate(self, attrs):
-        if attrs.get('password') != attrs.get('password_confirm'):
-            raise serializers.ValidationError({"password": "Passwords don't match"})
+        """Cross-field validation"""
+        password = attrs.get('password')
+        password_confirm = attrs.get('password_confirm')
+        
+        if password != password_confirm:
+            raise serializers.ValidationError({"password": "Parollar mos kelmaydi"})
         
         # Ensure affiliation is not empty (can be optional but if provided, must be valid)
-        if not attrs.get('affiliation', '').strip():
+        affiliation = attrs.get('affiliation', '').strip()
+        if not affiliation:
             attrs['affiliation'] = 'N/A'  # Default value if empty
+        
+        # Validate first_name and last_name are not empty
+        if not attrs.get('first_name', '').strip():
+            raise serializers.ValidationError({"first_name": "Ism kiritilishi shart"})
+        
+        if not attrs.get('last_name', '').strip():
+            raise serializers.ValidationError({"last_name": "Familiya kiritilishi shart"})
         
         return attrs
     

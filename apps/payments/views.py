@@ -146,20 +146,23 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 error_note = payment_result.get('error_note') or payment_result.get('error') or payment_result.get('error_msg') or 'Payment preparation failed'
                 logger.error(f"Failed to prepare payment. Error code: {final_error_code}, Error note: {error_note}, Payment URL: {payment_url}, Full response: {payment_result}")
                 
+                # Don't expose full payment_result details to user
+                logger.error(f"Payment preparation failed. Full response: {payment_result}")
                 return Response({
                     'success': False,
                     'error_code': final_error_code,
                     'error': error_note,
                     'error_note': error_note,
-                    'details': payment_result  # Include full response for debugging
                 }, status=status.HTTP_400_BAD_REQUEST)
                 
         except Exception as e:
             logger.error(f"Error processing payment: {str(e)}", exc_info=True)
+            # Don't expose internal error details to user
             return Response({
                 'success': False,
                 'error_code': -9,
-                'error': str(e)
+                'error': 'To\'lovni amalga oshirishda xatolik yuz berdi. Iltimos, qayta urinib ko\'ring.',
+                'error_note': 'To\'lovni amalga oshirishda xatolik yuz berdi. Iltimos, qayta urinib ko\'ring.'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
