@@ -230,34 +230,26 @@ def register(request):
 def login(request):
     """Login user"""
     import logging
-    import json
     logger = logging.getLogger(__name__)
     
     try:
-        # Parse request data - handle both request.data and request.body
-        data = None
-        if hasattr(request, 'data') and request.data:
-            data = request.data
-        elif hasattr(request, 'body') and request.body:
-            try:
-                data = json.loads(request.body.decode('utf-8'))
-            except (json.JSONDecodeError, UnicodeDecodeError) as e:
-                logger.error(f"JSON decode error in login: {e}, body: {request.body[:200] if hasattr(request, 'body') else 'N/A'}")
-                return Response({
-                    'detail': 'Invalid JSON format',
-                    'error': str(e)
-                }, status=status.HTTP_400_BAD_REQUEST)
-        
-        if not data:
+        # DRF automatically parses request.data for JSON requests
+        # Check if data exists
+        if not request.data:
             logger.error("No data provided in login request")
             return Response({
-                'detail': 'No data provided. Please send phone and password.',
+                'detail': 'No data provided',
                 'non_field_errors': ['Telefon raqam va parol kiritilishi shart']
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        logger.info(f"Login attempt - phone: {str(data.get('phone', 'N/A'))[:15]}..., has password: {bool(data.get('password'))}")
+        # Log the incoming data for debugging
+        phone_value = request.data.get('phone', 'N/A')
+        has_password = bool(request.data.get('password'))
+        logger.info(f"Login attempt - phone: {str(phone_value)[:15]}..., has password: {has_password}")
         
-        serializer = LoginSerializer(data=data, context={'request': request})
+        # Use DRF's standard serializer validation
+        serializer = LoginSerializer(data=request.data, context={'request': request})
+        
         if serializer.is_valid():
             user = serializer.validated_data['user']
             refresh = RefreshToken.for_user(user)
@@ -271,6 +263,7 @@ def login(request):
             logger.warning(f"Login validation failed: {serializer.errors}")
             # Return detailed validation errors
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
     except Exception as e:
         logger.error(f"Login exception: {str(e)}", exc_info=True)
         return Response({
