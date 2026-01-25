@@ -230,11 +230,34 @@ def register(request):
 def login(request):
     """Login user"""
     import logging
+    import json
     logger = logging.getLogger(__name__)
     
     try:
-        logger.info(f"Login request received: phone={request.data.get('phone', 'N/A')[:10]}...")
-        serializer = LoginSerializer(data=request.data, context={'request': request})
+        # Parse request data - handle both request.data and request.body
+        data = None
+        if hasattr(request, 'data') and request.data:
+            data = request.data
+        elif hasattr(request, 'body') and request.body:
+            try:
+                data = json.loads(request.body.decode('utf-8'))
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                logger.error(f"JSON decode error in login: {e}, body: {request.body[:200] if hasattr(request, 'body') else 'N/A'}")
+                return Response({
+                    'detail': 'Invalid JSON format',
+                    'error': str(e)
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not data:
+            logger.error("No data provided in login request")
+            return Response({
+                'detail': 'No data provided. Please send phone and password.',
+                'non_field_errors': ['Telefon raqam va parol kiritilishi shart']
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        logger.info(f"Login attempt - phone: {str(data.get('phone', 'N/A'))[:15]}..., has password: {bool(data.get('password'))}")
+        
+        serializer = LoginSerializer(data=data, context={'request': request})
         if serializer.is_valid():
             user = serializer.validated_data['user']
             refresh = RefreshToken.for_user(user)
@@ -246,9 +269,11 @@ def login(request):
             })
         else:
             logger.warning(f"Login validation failed: {serializer.errors}")
+            # Return detailed validation errors
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         logger.error(f"Login exception: {str(e)}", exc_info=True)
         return Response({
-            'non_field_errors': ['Tizimga kirishda xatolik yuz berdi. Iltimos, qayta urinib ko\'ring.']
+            'non_field_errors': ['Tizimga kirishda xatolik yuz berdi. Iltimos, qayta urinib ko\'ring.'],
+            'detail': str(e) if settings.DEBUG else None
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
