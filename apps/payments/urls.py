@@ -5,12 +5,16 @@ from . import views
 router = DefaultRouter()
 router.register('transactions', views.TransactionViewSet, basename='transaction')
 
-# Click callbacks must be BEFORE router.urls to avoid conflicts
+# Payment provider callbacks must be BEFORE router.urls to avoid conflicts
 urlpatterns = [
     # Click callbacks - both with and without trailing slash
     re_path(r'^click/prepare/?$', views.click_prepare_view, name='click_prepare'),
     re_path(r'^click/complete/?$', views.click_complete_view, name='click_complete'),
     re_path(r'^click/callback/?$', views.ClickPaymentView.as_view(), name='click_callback'),
-    # Router URLs come after click URLs
+    
+    # Payme callback - JSON-RPC endpoint
+    re_path(r'^payme/?$', views.payme_callback_view, name='payme_callback'),
+    
+    # Router URLs come after payment provider URLs
     path('', include(router.urls)),
 ]

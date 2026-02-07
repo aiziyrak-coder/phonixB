@@ -259,6 +259,13 @@ CLICK_SERVICE_ID = os.getenv('CLICK_SERVICE_ID', '89248')
 CLICK_SECRET_KEY = os.getenv('CLICK_SECRET_KEY', '08ClKUoBemAxyM')
 CLICK_MERCHANT_USER_ID = os.getenv('CLICK_MERCHANT_USER_ID', '72021')
 
+# Payme Payment Settings
+PAYME_MERCHANT_ID = os.getenv('PAYME_MERCHANT_ID', '')
+PAYME_MERCHANT_KEY = os.getenv('PAYME_MERCHANT_KEY', '')
+PAYME_TEST_KEY = os.getenv('PAYME_TEST_KEY', '')
+PAYME_IS_TEST = os.getenv('PAYME_IS_TEST', 'True').lower() == 'true'
+PAYME_ENDPOINT = os.getenv('PAYME_ENDPOINT', 'https://checkout.paycom.uz')
+
 # Email Settings (for notifications)
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')

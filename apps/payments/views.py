@@ -15,6 +15,7 @@ import logging
 from .models import Transaction
 from .serializers import TransactionSerializer, CreateTransactionSerializer
 from .services import ClickPaymentService
+from .payme_service import PaymeService, PaymeError
 
 logger = logging.getLogger(__name__)
 
@@ -85,12 +86,44 @@ class TransactionViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def process_payment(self, request, pk=None):
-        """Process payment for transaction - creates invoice and returns payment URL"""
+        """Process payment for transaction - creates invoice and returns payment URL
+        
+        Query params:
+            provider: 'click' or 'payme' (default: 'click')
+        """
         transaction = self.get_object()
-        service = ClickPaymentService()
+        provider = request.query_params.get('provider', 'click').lower()
         
         try:
-            # Prepare payment - creates payment URL directly
+            # Select payment provider
+            if provider == 'payme':
+                service = PaymeService()
+                # Generate Payme payment link
+                payment_result = service.generate_pay_link(transaction)
+                # Mark transaction as payme
+                transaction.payment_provider = 'payme'
+                transaction.save()
+                
+                # Return Payme payment URL
+                return Response({
+                    'success': True,
+                    'payment_url': payment_result['payment_url'],
+                    'provider': 'payme',
+                    'merchant_id': payment_result['merchant_id'],
+                    'merchant_trans_id': str(transaction.id),
+                    'amount': float(transaction.amount),
+                    'currency': transaction.currency,
+                    'error_code': 0,
+                    'error_note': 'Success'
+                }, status=status.HTTP_200_OK)
+            
+            else:  # Default to Click
+                service = ClickPaymentService()
+                # Mark transaction as click
+                transaction.payment_provider = 'click'
+                transaction.save()
+            
+            # Prepare payment - creates payment URL directly (for Click)
             payment_result = service.prepare_payment(transaction)
             logger.info(f"Payment preparation result: {payment_result}")
             logger.info(f"Payment result type - error_code: {type(payment_result.get('error_code'))}, value: {payment_result.get('error_code')}, payment_url: {payment_result.get('payment_url')}")
@@ -303,3 +336,105 @@ class ClickPaymentView(View):
                 'success': False,
                 'error': str(e)
             }, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def payme_callback_view(request):
+    """Handle Payme JSON-RPC callbacks
+    
+    Payme uses JSON-RPC 2.0 protocol for all callbacks
+    """
+    try:
+        # Log request details
+        logger.info(f"Payme callback received from {request.META.get('REMOTE_ADDR', 'unknown')}")
+        logger.info(f"Authorization: {request.META.get('HTTP_AUTHORIZATION', 'N/A')[:20]}...")
+        
+        # Parse JSON-RPC request
+        try:
+            data = json.loads(request.body.decode('utf-8'))
+            logger.info(f"Payme request data: {data}")
+        except json.JSONDecodeError:
+            return JsonResponse({
+                'jsonrpc': '2.0',
+                'error': {
+                    'code': -32700,
+                    'message': 'Parse error'
+                },
+                'id': None
+            })
+        
+        # Extract JSON-RPC fields
+        jsonrpc_version = data.get('jsonrpc')
+        method = data.get('method')
+        params = data.get('params', {})
+        request_id = data.get('id')
+        
+        # Validate JSON-RPC version
+        if jsonrpc_version != '2.0':
+            return JsonResponse({
+                'jsonrpc': '2.0',
+                'error': {
+                    'code': -32600,
+                    'message': 'Invalid Request'
+                },
+                'id': request_id
+            })
+        
+        # Initialize Payme service
+        service = PaymeService()
+        
+        # Check authorization
+        try:
+            authorization = request.META.get('HTTP_AUTHORIZATION', '')
+            service.check_authorization(authorization)
+        except PaymeError as e:
+            return JsonResponse({
+                'jsonrpc': '2.0',
+                'error': e.to_dict(),
+                'id': request_id
+            })
+        
+        # Handle method
+        try:
+            if method == 'CheckPerformTransaction':
+                result = service.check_perform_transaction(params)
+            elif method == 'CreateTransaction':
+                result = service.create_transaction(params)
+            elif method == 'PerformTransaction':
+                result = service.perform_transaction(params)
+            elif method == 'CancelTransaction':
+                result = service.cancel_transaction(params)
+            elif method == 'CheckTransaction':
+                result = service.check_transaction(params)
+            elif method == 'GetStatement':
+                result = service.get_statement(params)
+            else:
+                raise PaymeError(-32601, f"Method not found: {method}")
+            
+            logger.info(f"Payme {method} successful: {result}")
+            
+            return JsonResponse({
+                'jsonrpc': '2.0',
+                'result': result,
+                'id': request_id
+            })
+            
+        except PaymeError as e:
+            logger.error(f"Payme error in {method}: {e.message}")
+            return JsonResponse({
+                'jsonrpc': '2.0',
+                'error': e.to_dict(),
+                'id': request_id
+            })
+        
+    except Exception as e:
+        logger.error(f"Unexpected error in payme_callback_view: {str(e)}", exc_info=True)
+        return JsonResponse({
+            'jsonrpc': '2.0',
+            'error': {
+                'code': -31008,
+                'message': 'Internal server error'
+            },
+            'id': request.id if hasattr(request, 'id') else None
+        }, status=500)

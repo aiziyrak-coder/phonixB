@@ -37,6 +37,13 @@ class Transaction(models.Model):
     click_paydoc_id = models.CharField(max_length=100, blank=True)
     merchant_trans_id = models.CharField(max_length=100, blank=True)
     
+    # Payme payment fields
+    payme_trans_id = models.CharField(max_length=100, blank=True)
+    payme_time = models.BigIntegerField(null=True, blank=True)
+    
+    # Payment provider (click, payme, etc)
+    payment_provider = models.CharField(max_length=20, blank=True, default='')
+    
     receipt_path = models.FileField(upload_to='receipts/', blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
