@@ -19,7 +19,7 @@ class ClickPaymentService:
         # Use settings with fallback to PHOENIX service defaults
         merchant_id_raw = settings.CLICK_MERCHANT_ID or '45730'
         service_id_raw = settings.CLICK_SERVICE_ID or '89248'
-        secret_key_raw = settings.CLICK_SECRET_KEY or '08CIKUoBemAxyM'
+        secret_key_raw = settings.CLICK_SECRET_KEY or '08ClKUoBemAxyM'
         merchant_user_id_raw = settings.CLICK_MERCHANT_USER_ID or '72021'
         
         # Convert to string and strip whitespace
@@ -37,14 +37,14 @@ class ClickPaymentService:
         self.service_secret_keys = {
             '82154': getattr(settings, 'CLICK_SERVICE_82154_SECRET_KEY', 'XZC6u3JBBh'),  # Ilmiyfaoliyat.uz
             '82155': getattr(settings, 'CLICK_SERVICE_82155_SECRET_KEY', 'icHbYQnMBx'),  # Phoenix publication
-            '89248': getattr(settings, 'CLICK_SERVICE_89248_SECRET_KEY', '08CIKUoBemAxyM'),  # Yangi PHOENIX service
+            '89248': getattr(settings, 'CLICK_SERVICE_89248_SECRET_KEY', '08ClKUoBemAxyM'),  # Yangi PHOENIX service - Click'dan olgan to'g'ri kalit
             '88045': getattr(settings, 'CLICK_SERVICE_88045_SECRET_KEY', 'EcyUxjPNLqxxZo'),  # PHOENIX - yangi service
         }
         
         # Default secret key (asosiy service uchun)
         if not self.secret_key:
             logger.error("CLICK_SECRET_KEY is empty, using default")
-            self.secret_key = '08CIKUoBemAxyM'
+            self.secret_key = '08ClKUoBemAxyM'
         
         # Validate that all required fields are set (non-empty after strip)
         if not self.service_id:
