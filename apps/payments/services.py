@@ -783,17 +783,23 @@ class ClickPaymentService:
     def handle_complete(self, data):
         """Handle Click complete request
         According to Click API documentation:
-        sign_string = md5(click_trans_id + merchant_trans_id + merchant_prepare_id + error + sign_time + secret_key)
+        sign_string = md5(click_trans_id + service_id + SECRET_KEY + merchant_trans_id + merchant_prepare_id + amount + action + sign_time)
+        
+        IMPORTANT: SECRET_KEY comes AFTER service_id and BEFORE merchant_trans_id!
+        error parameter is NOT included in signature!
         """
         try:
             click_trans_id = data.get('click_trans_id')
+            service_id = data.get('service_id')  # Complete'da ham service_id keladi!
             merchant_trans_id = data.get('merchant_trans_id')
             merchant_prepare_id = data.get('merchant_prepare_id')
+            amount = data.get('amount')
+            action = data.get('action')
             error = data.get('error')
             sign_time = data.get('sign_time')
             sign_string = data.get('sign_string')
             
-            # Find transaction first to get service_id
+            # Find transaction first to get service_id (if not in request)
             try:
                 transaction = Transaction.objects.get(id=merchant_trans_id)
             except Transaction.DoesNotExist:
@@ -803,26 +809,51 @@ class ClickPaymentService:
                 except Transaction.DoesNotExist:
                     return {'error': -5, 'error_note': 'Transaction not found'}
             
-            # Get service_id from transaction (saved during prepare) or use default
-            # Complete'da service_id kelmaydi, lekin prepare'da saqlangan bo'lishi mumkin
-            # Yoki click_trans_id orqali topish mumkin
-            # Hozircha default secret key ishlatamiz, lekin agar transaction'da service_id bo'lsa, uni ishlatamiz
-            service_id_for_complete = getattr(transaction, 'click_service_id', None) or self.service_id
+            # Get service_id from request or transaction (saved during prepare) or use default
+            service_id_for_complete = service_id or getattr(transaction, 'click_service_id', None) or self.service_id
             
             # Get secret key for this service
             service_secret_key = self.get_secret_key_for_service(service_id_for_complete)
             logger.info(f"Complete: Using secret key for service_id={service_id_for_complete}")
             
-            # Verify signature for complete request
-            # sign_string = md5(click_trans_id + merchant_trans_id + merchant_prepare_id + error + sign_time + secret_key)
-            expected_sign = self.generate_signature_with_key(
-                service_secret_key, click_trans_id, merchant_trans_id, merchant_prepare_id, error, sign_time
-            )
+            # Verify signature for complete request - Click dokumentatsiyasiga ko'ra
+            # Format: md5(click_trans_id + service_id + SECRET_KEY + merchant_trans_id + merchant_prepare_id + amount + action + sign_time)
+            # SECRET_KEY service_id dan keyin, merchant_trans_id dan oldin keladi!
+            # error parametri signature'ga kiritilmaydi!
+            
+            logger.info(f"=== COMPLETE SIGNATURE DEBUG START ===")
+            logger.info(f"click_trans_id: {click_trans_id}")
+            logger.info(f"service_id: {service_id_for_complete}")
+            logger.info(f"merchant_trans_id: {merchant_trans_id}")
+            logger.info(f"merchant_prepare_id: {merchant_prepare_id}")
+            logger.info(f"amount: {amount}")
+            logger.info(f"action: {action}")
+            logger.info(f"sign_time: {sign_time}")
+            logger.info(f"error: {error} (NOT in signature)")
+            logger.info(f"service_secret_key: {service_secret_key[:10]}...")
+            logger.info(f"Received sign_string: {sign_string}")
+            
+            sign_parts = [
+                str(click_trans_id),
+                str(service_id_for_complete),
+                service_secret_key,  # SECRET_KEY service_id dan keyin!
+                str(merchant_trans_id),
+                str(merchant_prepare_id),
+                str(amount),
+                str(action),
+                str(sign_time)
+            ]
+            sign_string_to_hash = ''.join(sign_parts)
+            logger.info(f"Sign string parts (correct order): {[p[:20] + '...' if len(p) > 20 else p for p in sign_parts]}")
+            
+            expected_sign = hashlib.md5(sign_string_to_hash.encode('utf-8')).hexdigest()
             
             logger.info(f"Complete signature: Expected={expected_sign}, Received={sign_string}")
+            logger.info(f"=== COMPLETE SIGNATURE DEBUG END ===")
             
             if sign_string and sign_string != expected_sign:
                 logger.error(f"Complete signature mismatch! Expected: {expected_sign}, Got: {sign_string}")
+                logger.error(f"Correct format: md5(click_trans_id + service_id + SECRET_KEY + merchant_trans_id + merchant_prepare_id + amount + action + sign_time)")
                 return {'error': -1, 'error_note': 'Invalid signature'}
             
             # Update transaction status based on error code
