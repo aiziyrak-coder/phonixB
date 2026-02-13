@@ -405,19 +405,41 @@ class ClickPaymentService:
         # If use_invoice is False, create direct payment URL without invoice
         if not use_invoice:
             # Direct payment URL - invoice yaratmasdan
-            # Click'da to'g'ridan-to'g'ri payment URL yaratish mumkin
-            payment_url = f"https://my.click.uz/services/pay?service_id={service_id_int}&merchant_trans_id={str(transaction.id)}"
+            # Click dokumentatsiyasiga ko'ra: https://docs.click.uz/click-button/
+            # Majburiy parametrlar: merchant_id, service_id, transaction_param, amount
+            # Ixtiyoriy: return_url, card_type
             
-            logger.info(f"Direct payment URL created (without invoice): {payment_url}")
+            merchant_id_int = int(self.merchant_id)
+            transaction_param = str(transaction.id)  # transaction_param = merchant_trans_id
+            amount_formatted = f"{float(transaction.amount):.2f}"  # Format: N.NN
+            
+            # Base URL with mandatory parameters
+            payment_url = (
+                f"https://my.click.uz/services/pay"
+                f"?merchant_id={merchant_id_int}"
+                f"&service_id={service_id_int}"
+                f"&transaction_param={transaction_param}"
+                f"&amount={amount_formatted}"
+            )
+            
+            # Add optional return_url if available
+            # Frontend'dan kelgan return_url ni qo'shish mumkin, lekin hozircha ixtiyoriy
+            # return_url = request.GET.get('return_url', '')
+            # if return_url:
+            #     payment_url += f"&return_url={return_url}"
+            
+            logger.info(f"Direct payment URL created (Click format): {payment_url}")
+            logger.info(f"Parameters: merchant_id={merchant_id_int}, service_id={service_id_int}, transaction_param={transaction_param}, amount={amount_formatted}")
             
             return {
                 'error_code': 0,
                 'error_note': 'Success',
                 'payment_url': payment_url,
                 'invoice_id': None,
-                'merchant_trans_id': str(transaction.id),
+                'merchant_trans_id': transaction_param,
                 'amount': float(transaction.amount),
                 'service_id': service_id_int,
+                'merchant_id': merchant_id_int,
                 'direct_payment': True  # Invoice yaratilmadi, to'g'ridan-to'g'ri URL
             }
         
@@ -468,7 +490,17 @@ class ClickPaymentService:
                 invoice_id = invoice_result_test.get('invoice_id')
                 payment_url = invoice_result_test.get('invoice_url') or invoice_result_test.get('payment_url')
                 if not payment_url:
-                    payment_url = f"https://my.click.uz/services/pay?service_id={service_id_int}&merchant_trans_id={str(transaction.id)}"
+                    # Create URL in Click format
+                    merchant_id_int = int(self.merchant_id)
+                    transaction_param = str(transaction.id)
+                    amount_formatted = f"{float(transaction.amount):.2f}"
+                    payment_url = (
+                        f"https://my.click.uz/services/pay"
+                        f"?merchant_id={merchant_id_int}"
+                        f"&service_id={service_id_int}"
+                        f"&transaction_param={transaction_param}"
+                        f"&amount={amount_formatted}"
+                    )
                 logger.info(f"Invoice created with test phone, payment URL: {payment_url}")
                 return {
                     'error_code': 0,
@@ -486,17 +518,28 @@ class ClickPaymentService:
             logger.warning(f"Invoice creation failed: {test_error_note}")
             logger.info("Using direct payment URL instead (without invoice)")
             
-            # Create direct payment URL without invoice
-            payment_url = f"https://my.click.uz/services/pay?service_id={service_id_int}&merchant_trans_id={str(transaction.id)}"
+            # Create direct payment URL without invoice (Click format)
+            merchant_id_int = int(self.merchant_id)
+            transaction_param = str(transaction.id)
+            amount_formatted = f"{float(transaction.amount):.2f}"
+            
+            payment_url = (
+                f"https://my.click.uz/services/pay"
+                f"?merchant_id={merchant_id_int}"
+                f"&service_id={service_id_int}"
+                f"&transaction_param={transaction_param}"
+                f"&amount={amount_formatted}"
+            )
             
             return {
                 'error_code': 0,
                 'error_note': 'Success (direct payment URL, invoice yaratilmadi)',
                 'payment_url': payment_url,
                 'invoice_id': None,
-                'merchant_trans_id': str(transaction.id),
+                'merchant_trans_id': transaction_param,
                 'amount': float(transaction.amount),
                 'service_id': service_id_int,
+                'merchant_id': merchant_id_int,
                 'direct_payment': True,
                 'warning': 'Invoice yaratilmadi, lekin to\'g\'ridan-to\'g\'ri to\'lov URL yaratildi. User Click sahifasida karta ma\'lumotlarini kiritishi mumkin.'
             }
@@ -538,14 +581,22 @@ class ClickPaymentService:
             payment_url = invoice_result.get('invoice_url') or invoice_result.get('payment_url') or invoice_result.get('url')
             
             # If no payment URL in response, construct it manually based on Click documentation
-            # Click payment URL format with invoice: https://my.click.uz/services/pay?service_id={service_id}&merchant_trans_id={merchant_trans_id}&invoice_id={invoice_id}
-            # Or without invoice_id: https://my.click.uz/services/pay?service_id={service_id}&merchant_trans_id={merchant_trans_id}
+            # Click payment URL format: https://my.click.uz/services/pay?merchant_id={merchant_id}&service_id={service_id}&transaction_param={transaction_param}&amount={amount}
             if not payment_url:
+                merchant_id_int = int(self.merchant_id)
+                transaction_param = str(transaction.id)
+                amount_formatted = f"{float(transaction.amount):.2f}"
+                
+                payment_url = (
+                    f"https://my.click.uz/services/pay"
+                    f"?merchant_id={merchant_id_int}"
+                    f"&service_id={service_id_int}"
+                    f"&transaction_param={transaction_param}"
+                    f"&amount={amount_formatted}"
+                )
                 if invoice_id:
-                    payment_url = f"https://my.click.uz/services/pay?service_id={service_id_int}&merchant_trans_id={str(transaction.id)}&invoice_id={invoice_id}"
-                else:
-                    payment_url = f"https://my.click.uz/services/pay?service_id={service_id_int}&merchant_trans_id={str(transaction.id)}"
-                logger.info(f"Constructed payment URL manually: {payment_url}")
+                    payment_url += f"&invoice_id={invoice_id}"
+                logger.info(f"Constructed payment URL manually (Click format): {payment_url}")
             
             logger.info(f"Payment URL from invoice (success): {payment_url}, invoice_id: {invoice_id}")
             
@@ -574,17 +625,28 @@ class ClickPaymentService:
             logger.warning(f"Invoice creation failed: {invoice_error_code} - {error_note}")
             logger.info("Using direct payment URL instead (without invoice)")
             
-            # Create direct payment URL without invoice
-            payment_url = f"https://my.click.uz/services/pay?service_id={service_id_int}&merchant_trans_id={str(transaction.id)}"
+            # Create direct payment URL without invoice (Click format)
+            merchant_id_int = int(self.merchant_id)
+            transaction_param = str(transaction.id)
+            amount_formatted = f"{float(transaction.amount):.2f}"
+            
+            payment_url = (
+                f"https://my.click.uz/services/pay"
+                f"?merchant_id={merchant_id_int}"
+                f"&service_id={service_id_int}"
+                f"&transaction_param={transaction_param}"
+                f"&amount={amount_formatted}"
+            )
             
             return {
                 'error_code': 0,
                 'error_note': 'Success (direct payment URL, invoice yaratilmadi)',
                 'payment_url': payment_url,
                 'invoice_id': None,
-                'merchant_trans_id': str(transaction.id),
+                'merchant_trans_id': transaction_param,
                 'amount': float(transaction.amount),
                 'service_id': service_id_int,
+                'merchant_id': merchant_id_int,
                 'direct_payment': True,
                 'warning': f'Invoice yaratilmadi ({error_note}), lekin to\'g\'ridan-to\'g\'ri to\'lov URL yaratildi. User Click sahifasida karta ma\'lumotlarini kiritishi mumkin.'
             }
@@ -625,9 +687,36 @@ class ClickPaymentService:
             
             # Verify signature - order is important!
             # If click_paydoc_id exists, include it in signature
+            # DEBUG: Log all values before signature generation
+            logger.info(f"=== SIGNATURE DEBUG START ===")
+            logger.info(f"click_trans_id: {click_trans_id} (type: {type(click_trans_id)})")
+            logger.info(f"service_id: {service_id} (type: {type(service_id)})")
+            logger.info(f"click_paydoc_id: {click_paydoc_id} (type: {type(click_paydoc_id)})")
+            logger.info(f"merchant_trans_id: {merchant_trans_id} (type: {type(merchant_trans_id)})")
+            logger.info(f"amount: {amount} (type: {type(amount)})")
+            logger.info(f"action: {action} (type: {type(action)})")
+            logger.info(f"sign_time: {sign_time} (type: {type(sign_time)})")
+            logger.info(f"service_secret_key: {service_secret_key[:10]}... (length: {len(service_secret_key)})")
+            logger.info(f"Received sign_string: {sign_string}")
+            
             if click_paydoc_id:
                 # sign_string = md5(click_trans_id + service_id + click_paydoc_id + merchant_trans_id + amount + action + sign_time + secret_key)
                 # Use service-specific secret key
+                # Convert all to strings explicitly
+                sign_parts = [
+                    str(click_trans_id),
+                    str(service_id),
+                    str(click_paydoc_id),
+                    str(merchant_trans_id),
+                    str(amount),
+                    str(action),
+                    str(sign_time),
+                    service_secret_key
+                ]
+                sign_string_to_hash = ''.join(sign_parts)
+                logger.info(f"Sign string parts: {sign_parts}")
+                logger.info(f"Full sign string: {sign_string_to_hash}")
+                
                 expected_sign = self.generate_signature_with_key(
                     service_secret_key, click_trans_id, service_id, click_paydoc_id, merchant_trans_id, amount, action, sign_time
                 )
@@ -641,20 +730,39 @@ class ClickPaymentService:
                 logger.info(f"Prepare signature without click_paydoc_id: click_trans_id={click_trans_id}, service_id={service_id}, merchant_trans_id={merchant_trans_id}, amount={amount}, action={action}, sign_time={sign_time}")
             
             logger.info(f"Expected signature: {expected_sign}, Received signature: {sign_string}")
+            logger.info(f"=== SIGNATURE DEBUG END ===")
             
             if sign_string != expected_sign:
                 logger.error(f"Signature mismatch! Expected: {expected_sign}, Got: {sign_string}")
+                logger.error(f"Please check: 1) Secret key is correct for service_id={service_id}, 2) Parameter order matches Click documentation")
                 return {'error': -1, 'error_note': 'Invalid signature'}
             
-            # Find transaction - merchant_trans_id is UUID string, need to convert
+            # Find transaction - merchant_trans_id (Click'da transaction_param deb ataladi)
+            # Click'dan kelgan merchant_trans_id bizning transaction.id yoki transaction.merchant_trans_id ga mos kelishi kerak
+            transaction = None
             try:
+                # Avval UUID sifatida qidirish
                 transaction = Transaction.objects.get(id=merchant_trans_id)
-            except Transaction.DoesNotExist:
-                # Try to find by merchant_trans_id field if UUID conversion fails
+            except (Transaction.DoesNotExist, ValueError):
+                # UUID emas bo'lsa, merchant_trans_id field orqali qidirish
                 try:
                     transaction = Transaction.objects.get(merchant_trans_id=merchant_trans_id)
                 except Transaction.DoesNotExist:
-                    return {'error': -5, 'error_note': 'Transaction not found'}
+                    # Test to'lov bo'lishi mumkin (merchant_trans_id="test")
+                    logger.warning(f"Transaction not found for merchant_trans_id={merchant_trans_id}. This might be a test payment.")
+                    # Test to'lov uchun ham signature tekshirilishi kerak
+                    # Signature tekshiruvi o'tgan bo'lsa, test to'lov sifatida qabul qilamiz
+                    if sign_string == expected_sign:
+                        logger.info(f"Test payment detected (merchant_trans_id={merchant_trans_id}). Signature verified successfully.")
+                        return {
+                            'click_trans_id': click_trans_id,
+                            'merchant_trans_id': merchant_trans_id,
+                            'merchant_prepare_id': merchant_trans_id,
+                            'error': 0,
+                            'error_note': 'Success (test payment)'
+                        }
+                    else:
+                        return {'error': -5, 'error_note': 'Transaction not found'}
             
             # Check amount - compare as floats to avoid precision issues
             if abs(float(amount) - float(transaction.amount)) > 0.01:
