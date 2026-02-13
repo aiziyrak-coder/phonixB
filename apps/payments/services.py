@@ -374,15 +374,52 @@ class ClickPaymentService:
         response = requests.delete(url, headers=headers)
         return response.json()
     
-    def prepare_payment(self, transaction):
-        """Prepare payment data for Click by creating invoice
-        Returns payment data with payment_url that should be used to redirect user to payment page
+    def create_direct_payment_url(self, transaction, use_invoice=False):
+        """Create direct payment URL without invoice (OSON TO'LOV)
+        
+        Args:
+            transaction: Transaction object
+            use_invoice: If True, try to create invoice first. If False, create direct URL.
+        
+        Returns:
+            dict with payment_url
         """
         # Ensure transaction has merchant_trans_id
         if not transaction.merchant_trans_id:
             transaction.merchant_trans_id = str(transaction.id)
             transaction.save()
         
+        # Get service_id as integer
+        try:
+            service_id_int = int(self.service_id)
+        except (ValueError, TypeError):
+            logger.error(f"Invalid service_id: {self.service_id}")
+            return {
+                'error_code': -1,
+                'error_note': f'Invalid service_id: {self.service_id}',
+                'payment_url': None
+            }
+        
+        # If use_invoice is False, create direct payment URL without invoice
+        if not use_invoice:
+            # Direct payment URL - invoice yaratmasdan
+            # Click'da to'g'ridan-to'g'ri payment URL yaratish mumkin
+            payment_url = f"https://my.click.uz/services/pay?service_id={service_id_int}&merchant_trans_id={str(transaction.id)}"
+            
+            logger.info(f"Direct payment URL created (without invoice): {payment_url}")
+            
+            return {
+                'error_code': 0,
+                'error_note': 'Success',
+                'payment_url': payment_url,
+                'invoice_id': None,
+                'merchant_trans_id': str(transaction.id),
+                'amount': float(transaction.amount),
+                'service_id': service_id_int,
+                'direct_payment': True  # Invoice yaratilmadi, to'g'ridan-to'g'ri URL
+            }
+        
+        # If use_invoice is True, try to create invoice (old method)
         # Get user phone number from transaction user - format for Click (998XXXXXXXXX)
         phone_number = None
         if transaction.user and hasattr(transaction.user, 'phone'):
@@ -401,19 +438,7 @@ class ClickPaymentService:
                 else:
                     logger.warning(f"Invalid phone number format for user {transaction.user.id}: {phone_raw}")
         
-        # Get service_id as integer
-        try:
-            service_id_int = int(self.service_id)
-        except (ValueError, TypeError):
-            logger.error(f"Invalid service_id: {self.service_id}")
-            return {
-                'error_code': -1,
-                'error_note': f'Invalid service_id: {self.service_id}',
-                'payment_url': None
-            }
-        
-        # If phone number is missing, try to use test phone number or create payment URL directly
-        # Note: Click requires phone_number for invoice creation, but some services allow direct payment URLs
+        # If phone number is missing, return direct payment URL
         if not phone_number:
             logger.warning(f"No valid phone number found for user {transaction.user.id if transaction.user else 'unknown'}")
             
@@ -454,28 +479,24 @@ class ClickPaymentService:
                     'warning': 'Invoice created with test phone number (998901234567). User should use their actual Click-registered phone number.'
                 }
             
-            # If test phone also fails, cannot proceed without invoice
+            # If test phone also fails, use direct payment URL (invoice yaratmasdan)
             test_error_note = invoice_result_test.get('error_note') or invoice_result_test.get('error') or 'Failed to create invoice with test phone'
-            logger.error("Invoice creation with test phone also failed. Cannot proceed without invoice.")
-            logger.error(f"Test invoice error: {invoice_error_code_test} - {test_error_note}")
-            logger.error(f"IMPORTANT: Invoice creation is REQUIRED for Click payments. User phone number is missing.")
-            logger.error(f"IMPORTANT: User must provide a valid phone number that is registered in Click system.")
-            logger.error(f"IMPORTANT: Ensure callback URLs are configured in Click merchant panel (merchant.click.uz)")
-            logger.error(f"Callback URLs should be:")
-            logger.error(f"  Prepare: https://api.ilmiyfaoliyat.uz/api/v1/payments/click/prepare/")
-            logger.error(f"  Complete: https://api.ilmiyfaoliyat.uz/api/v1/payments/click/complete/")
+            logger.warning(f"Invoice creation failed: {test_error_note}")
+            logger.info("Using direct payment URL instead (without invoice)")
             
-            # Return error - cannot proceed without invoice
+            # Create direct payment URL without invoice
+            payment_url = f"https://my.click.uz/services/pay?service_id={service_id_int}&merchant_trans_id={str(transaction.id)}"
+            
             return {
-                'error_code': invoice_error_code_test if invoice_error_code_test != -1 else -1,
-                'error_note': f'Invoice yaratib bo\'lmadi. User\'ning telefon raqami kerak va u Click tizimida ro\'yxatdan o\'tgan bo\'lishi kerak. Xatolik: {test_error_note}',
-                'payment_url': None,  # No payment URL without invoice
+                'error_code': 0,
+                'error_note': 'Success (direct payment URL, invoice yaratilmadi)',
+                'payment_url': payment_url,
                 'invoice_id': None,
                 'merchant_trans_id': str(transaction.id),
                 'amount': float(transaction.amount),
                 'service_id': service_id_int,
-                'details': invoice_result_test,
-                'user_message': 'To\'lov amalga oshirilmadi. Iltimos, telefon raqamingizni kiriting va u Click tizimida ro\'yxatdan o\'tgan bo\'lishi kerak.'
+                'direct_payment': True,
+                'warning': 'Invoice yaratilmadi, lekin to\'g\'ridan-to\'g\'ri to\'lov URL yaratildi. User Click sahifasida karta ma\'lumotlarini kiritishi mumkin.'
             }
         
         # Create invoice via Click API (recommended method)
@@ -547,44 +568,36 @@ class ClickPaymentService:
             logger.error(f"  Prepare: https://api.ilmiyfaoliyat.uz/api/v1/payments/click/prepare/")
             logger.error(f"  Complete: https://api.ilmiyfaoliyat.uz/api/v1/payments/click/complete/")
             
-            # Return error - invoice creation failed, cannot proceed
-            # Frontend should display error message to user
-            # Map Click error codes to user-friendly messages
-            user_friendly_message = f'To\'lov amalga oshirilmadi.'
+            # Invoice creation failed - use direct payment URL instead
+            logger.warning(f"Invoice creation failed: {invoice_error_code} - {error_note}")
+            logger.info("Using direct payment URL instead (without invoice)")
             
-            # Common Click error codes and their meanings
-            if invoice_error_code == -1:
-                user_friendly_message = f'To\'lov amalga oshirilmadi. Iltimos, telefon raqamingizni ({phone_number}) tekshiring va Click tizimida ro\'yxatdan o\'tgan bo\'lishi kerak.'
-            elif invoice_error_code == -2:
-                user_friendly_message = 'To\'lov miqdori noto\'g\'ri. Iltimos, qayta urinib ko\'ring.'
-            elif invoice_error_code == -3:
-                user_friendly_message = 'Foydalanuvchi topilmadi. Iltimos, telefon raqamingizni Click tizimida ro\'yxatdan o\'tkazing.'
-            elif invoice_error_code == -4:
-                user_friendly_message = 'To\'lov allaqachon amalga oshirilgan.'
-            elif invoice_error_code == -5:
-                user_friendly_message = 'Tranzaksiya topilmadi. Iltimos, qayta urinib ko\'ring.'
-            elif invoice_error_code == -6:
-                user_friendly_message = 'To\'lov bekor qilindi.'
-            elif invoice_error_code == -7:
-                user_friendly_message = 'To\'lov vaqti tugagan. Iltimos, qayta urinib ko\'ring.'
-            elif invoice_error_code == -8:
-                user_friendly_message = 'To\'lov holati noma\'lum. Iltimos, qayta urinib ko\'ring.'
-            elif invoice_error_code == -9:
-                user_friendly_message = 'Server xatolik. Iltimos, keyinroq qayta urinib ko\'ring.'
-            else:
-                user_friendly_message = f'To\'lov amalga oshirilmadi: {error_note}. Iltimos, telefon raqamingizni ({phone_number}) Click tizimida ro\'yxatdan o\'tkazing.'
+            # Create direct payment URL without invoice
+            payment_url = f"https://my.click.uz/services/pay?service_id={service_id_int}&merchant_trans_id={str(transaction.id)}"
             
             return {
-                'error_code': invoice_error_code if invoice_error_code != -1 else -514,  # Return actual error code or -514 (user not registered)
-                'error_note': f'Invoice yaratib bo\'lmadi: {error_note}. User\'ning telefon raqami ({phone_number}) Click tizimida ro\'yxatdan o\'tgan bo\'lishi kerak.',
-                'payment_url': None,  # No payment URL without invoice
+                'error_code': 0,
+                'error_note': 'Success (direct payment URL, invoice yaratilmadi)',
+                'payment_url': payment_url,
                 'invoice_id': None,
                 'merchant_trans_id': str(transaction.id),
                 'amount': float(transaction.amount),
                 'service_id': service_id_int,
-                'details': invoice_result,
-                'user_message': user_friendly_message
+                'direct_payment': True,
+                'warning': f'Invoice yaratilmadi ({error_note}), lekin to\'g\'ridan-to\'g\'ri to\'lov URL yaratildi. User Click sahifasida karta ma\'lumotlarini kiritishi mumkin.'
             }
+    
+    def prepare_payment(self, transaction, use_invoice=False):
+        """Prepare payment data for Click (OSON TO'LOV - invoice yaratmasdan)
+        
+        Args:
+            transaction: Transaction object
+            use_invoice: If True, try to create invoice. If False, create direct payment URL (default: False)
+        
+        Returns:
+            dict with payment_url
+        """
+        return self.create_direct_payment_url(transaction, use_invoice=use_invoice)
     
     def handle_prepare(self, data):
         """Handle Click prepare request

@@ -123,8 +123,9 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 transaction.payment_provider = 'click'
                 transaction.save()
             
-            # Prepare payment - creates payment URL directly (for Click)
-            payment_result = service.prepare_payment(transaction)
+            # Prepare payment - creates payment URL directly WITHOUT invoice (OSON TO'LOV)
+            # use_invoice=False - invoice yaratmasdan, to'g'ridan-to'g'ri payment URL yaratadi
+            payment_result = service.prepare_payment(transaction, use_invoice=False)
             logger.info(f"Payment preparation result: {payment_result}")
             logger.info(f"Payment result type - error_code: {type(payment_result.get('error_code'))}, value: {payment_result.get('error_code')}, payment_url: {payment_result.get('payment_url')}")
             
