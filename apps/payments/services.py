@@ -29,6 +29,18 @@ class ClickPaymentService:
         self.merchant_user_id = str(merchant_user_id_raw).strip()
         self.api_url = "https://api.click.uz/v2/merchant"
         
+        # Service-specific secret keys (Click'dan kelgan service_id ga mos)
+        # Service 82154 uchun (eski service - Click bergan kalitlar)
+        self.service_secret_keys = {
+            '82154': getattr(settings, 'CLICK_SERVICE_82154_SECRET_KEY', 'XZC6u3JBBh'),  # Eski service secret key
+            '89248': getattr(settings, 'CLICK_SERVICE_89248_SECRET_KEY', '08ClKUoBemAxyM'),  # Yangi PHOENIX service
+        }
+        
+        # Default secret key (asosiy service uchun)
+        if not self.secret_key:
+            logger.error("CLICK_SECRET_KEY is empty, using default")
+            self.secret_key = '08ClKUoBemAxyM'
+        
         # Validate that all required fields are set (non-empty after strip)
         if not self.service_id:
             logger.error("CLICK_SERVICE_ID is empty, using default: 89248")
@@ -36,14 +48,22 @@ class ClickPaymentService:
         if not self.merchant_user_id:
             logger.error("CLICK_MERCHANT_USER_ID is empty, using default: 72021")
             self.merchant_user_id = '72021'
-        if not self.secret_key:
-            logger.error("CLICK_SECRET_KEY is empty, using default")
-            self.secret_key = '08ClKUoBemAxyM'
         if not self.merchant_id:
             logger.error("CLICK_MERCHANT_ID is empty, using default: 45730")
             self.merchant_id = '45730'
         
         logger.info(f"ClickPaymentService initialized - service_id: {self.service_id}, merchant_user_id: {self.merchant_user_id}, merchant_id: {self.merchant_id}")
+    
+    def get_secret_key_for_service(self, service_id):
+        """Get secret key for specific service_id
+        
+        Click'dan kelgan service_id ga mos secret key qaytaradi
+        """
+        service_id_str = str(service_id).strip()
+        if service_id_str in self.service_secret_keys:
+            return self.service_secret_keys[service_id_str]
+        # Default secret key
+        return self.secret_key
     
     def generate_auth_header(self):
         """Generate Auth header for Click API requests"""
@@ -55,11 +75,26 @@ class ClickPaymentService:
     def generate_signature(self, *args):
         """Generate signature for Click request
         According to Click API: sign_string = md5(args + secret_key)
+        Uses default secret key
         """
         # Concatenate all arguments as strings
         sign_string = ''.join(str(arg) for arg in args)
         # Append secret key
         sign_string += self.secret_key
+        # Generate MD5 hash
+        return hashlib.md5(sign_string.encode('utf-8')).hexdigest()
+    
+    def generate_signature_with_key(self, secret_key, *args):
+        """Generate signature with specific secret key
+        
+        Args:
+            secret_key: Secret key to use for this signature
+            *args: Arguments to include in signature
+        """
+        # Concatenate all arguments as strings
+        sign_string = ''.join(str(arg) for arg in args)
+        # Append secret key
+        sign_string += secret_key
         # Generate MD5 hash
         return hashlib.md5(sign_string.encode('utf-8')).hexdigest()
     
@@ -566,18 +601,24 @@ class ClickPaymentService:
             sign_time = data.get('sign_time')
             sign_string = data.get('sign_string')
             
+            # Get secret key for this specific service_id (Click'dan kelgan)
+            service_secret_key = self.get_secret_key_for_service(service_id)
+            logger.info(f"Using secret key for service_id={service_id}")
+            
             # Verify signature - order is important!
             # If click_paydoc_id exists, include it in signature
             if click_paydoc_id:
                 # sign_string = md5(click_trans_id + service_id + click_paydoc_id + merchant_trans_id + amount + action + sign_time + secret_key)
-                expected_sign = self.generate_signature(
-                    click_trans_id, service_id, click_paydoc_id, merchant_trans_id, amount, action, sign_time
+                # Use service-specific secret key
+                expected_sign = self.generate_signature_with_key(
+                    service_secret_key, click_trans_id, service_id, click_paydoc_id, merchant_trans_id, amount, action, sign_time
                 )
                 logger.info(f"Prepare signature with click_paydoc_id: click_trans_id={click_trans_id}, service_id={service_id}, click_paydoc_id={click_paydoc_id}, merchant_trans_id={merchant_trans_id}, amount={amount}, action={action}, sign_time={sign_time}")
             else:
                 # sign_string = md5(click_trans_id + service_id + merchant_trans_id + amount + action + sign_time + secret_key)
-                expected_sign = self.generate_signature(
-                    click_trans_id, service_id, merchant_trans_id, amount, action, sign_time
+                # Use service-specific secret key
+                expected_sign = self.generate_signature_with_key(
+                    service_secret_key, click_trans_id, service_id, merchant_trans_id, amount, action, sign_time
                 )
                 logger.info(f"Prepare signature without click_paydoc_id: click_trans_id={click_trans_id}, service_id={service_id}, merchant_trans_id={merchant_trans_id}, amount={amount}, action={action}, sign_time={sign_time}")
             
@@ -606,6 +647,8 @@ class ClickPaymentService:
             if click_paydoc_id:
                 transaction.click_paydoc_id = str(click_paydoc_id)
             transaction.merchant_trans_id = str(transaction.id) if not transaction.merchant_trans_id else transaction.merchant_trans_id
+            # Save service_id for complete callback (complete'da service_id kelmaydi)
+            transaction.click_service_id = str(service_id)
             transaction.status = 'pending'  # Still pending until complete
             transaction.save()
             
@@ -634,16 +677,7 @@ class ClickPaymentService:
             sign_time = data.get('sign_time')
             sign_string = data.get('sign_string')
             
-            # Verify signature for complete request
-            # sign_string = md5(click_trans_id + merchant_trans_id + merchant_prepare_id + error + sign_time + secret_key)
-            expected_sign = self.generate_signature(
-                click_trans_id, merchant_trans_id, merchant_prepare_id, error, sign_time
-            )
-            
-            if sign_string and sign_string != expected_sign:
-                return {'error': -1, 'error_note': 'Invalid signature'}
-            
-            # Find transaction
+            # Find transaction first to get service_id
             try:
                 transaction = Transaction.objects.get(id=merchant_trans_id)
             except Transaction.DoesNotExist:
@@ -652,6 +686,28 @@ class ClickPaymentService:
                     transaction = Transaction.objects.get(merchant_trans_id=merchant_trans_id)
                 except Transaction.DoesNotExist:
                     return {'error': -5, 'error_note': 'Transaction not found'}
+            
+            # Get service_id from transaction (saved during prepare) or use default
+            # Complete'da service_id kelmaydi, lekin prepare'da saqlangan bo'lishi mumkin
+            # Yoki click_trans_id orqali topish mumkin
+            # Hozircha default secret key ishlatamiz, lekin agar transaction'da service_id bo'lsa, uni ishlatamiz
+            service_id_for_complete = getattr(transaction, 'click_service_id', None) or self.service_id
+            
+            # Get secret key for this service
+            service_secret_key = self.get_secret_key_for_service(service_id_for_complete)
+            logger.info(f"Complete: Using secret key for service_id={service_id_for_complete}")
+            
+            # Verify signature for complete request
+            # sign_string = md5(click_trans_id + merchant_trans_id + merchant_prepare_id + error + sign_time + secret_key)
+            expected_sign = self.generate_signature_with_key(
+                service_secret_key, click_trans_id, merchant_trans_id, merchant_prepare_id, error, sign_time
+            )
+            
+            logger.info(f"Complete signature: Expected={expected_sign}, Received={sign_string}")
+            
+            if sign_string and sign_string != expected_sign:
+                logger.error(f"Complete signature mismatch! Expected: {expected_sign}, Got: {sign_string}")
+                return {'error': -1, 'error_note': 'Invalid signature'}
             
             # Update transaction status based on error code
             if error == 0:

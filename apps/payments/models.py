@@ -36,6 +36,7 @@ class Transaction(models.Model):
     click_trans_id = models.CharField(max_length=100, blank=True)
     click_paydoc_id = models.CharField(max_length=100, blank=True)
     merchant_trans_id = models.CharField(max_length=100, blank=True)
+    click_service_id = models.CharField(max_length=50, blank=True)  # Service ID from Click callback
     
     # Payme payment fields
     payme_trans_id = models.CharField(max_length=100, blank=True)
