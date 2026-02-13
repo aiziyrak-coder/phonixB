@@ -6,6 +6,9 @@ from .models import Article, ArticleVersion, ActivityLog
 from .serializers import ArticleSerializer, CreateArticleSerializer, ArticleVersionSerializer
 from django.utils import timezone
 from apps.services import get_gemini_service
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ArticleViewSet(viewsets.ModelViewSet):
@@ -126,14 +129,45 @@ class ArticleViewSet(viewsets.ModelViewSet):
             # Use the Gemini service to perform plagiarism check
             gemini_service = get_gemini_service()
             
-            # Extract content from PDF file (simplified - in production, use proper PDF extraction)
-            # For now, we'll use the simulation method, but in production this should use real plagiarism detection
+            # Extract content from PDF file
+            text_content = ""
             if article.final_pdf_path:
-                # In production, extract actual content from PDF
-                # For now, use placeholder
-                result = gemini_service.check_plagiarism("Document content would be extracted from the file here")
+                try:
+                    import os
+                    from django.conf import settings
+                    
+                    # Get full file path
+                    file_path = os.path.join(settings.MEDIA_ROOT, str(article.final_pdf_path))
+                    
+                    # Extract text from PDF
+                    if os.path.exists(file_path):
+                        text_content = gemini_service.extract_text_from_pdf(file_path)
+                    else:
+                        # Try alternative path
+                        if hasattr(article, 'main_file') and article.main_file:
+                            file_path = article.main_file.path
+                            if os.path.exists(file_path):
+                                text_content = gemini_service.extract_text_from_pdf(file_path)
+                        
+                        if not text_content:
+                            logger.warning(f"PDF file not found at {file_path}, using article abstract")
+                            text_content = article.abstract or article.title or ""
+                except Exception as e:
+                    logger.error(f"Error extracting PDF content: {e}", exc_info=True)
+                    # Fallback to article text
+                    text_content = article.abstract or article.title or ""
             else:
-                result = gemini_service.check_plagiarism("Sample document content")
+                # Use article text as fallback
+                text_content = article.abstract or article.title or ""
+            
+            # Perform plagiarism check
+            if not text_content or len(text_content.strip()) < 50:
+                return Response(
+                    {'error': 'Plagiat tekshiruvi uchun maqola matni yetarli emas. Iltimos, PDF faylni yuklang.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            result = gemini_service.check_plagiarism(text_content)
             
             plagiarism_percentage = result.get('plagiarism_percentage', 0)
             ai_content_percentage = result.get('ai_content_percentage', 0)
