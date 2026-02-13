@@ -16,11 +16,11 @@ class ClickPaymentService:
     """Service for Click payment integration"""
     
     def __init__(self):
-        # Use settings with fallback to PHOENIX service defaults
+        # Use settings with fallback to Service 82154 defaults (barcha to'lovlar Service 82154 orqali)
         merchant_id_raw = settings.CLICK_MERCHANT_ID or '45730'
-        service_id_raw = settings.CLICK_SERVICE_ID or '89248'
-        secret_key_raw = settings.CLICK_SECRET_KEY or '08ClKUoBemAxyM'
-        merchant_user_id_raw = settings.CLICK_MERCHANT_USER_ID or '72021'
+        service_id_raw = settings.CLICK_SERVICE_ID or '82154'  # Default: Service 82154
+        secret_key_raw = settings.CLICK_SECRET_KEY or 'XZC6u3JBBh'  # Service 82154 secret key
+        merchant_user_id_raw = settings.CLICK_MERCHANT_USER_ID or '63536'  # Service 82154 merchant user id
         
         # Convert to string and strip whitespace
         self.merchant_id = str(merchant_id_raw).strip()
@@ -41,18 +41,18 @@ class ClickPaymentService:
             '88045': getattr(settings, 'CLICK_SERVICE_88045_SECRET_KEY', 'EcyUxjPNLqxxZo'),  # PHOENIX - yangi service
         }
         
-        # Default secret key (asosiy service uchun)
+        # Default secret key (asosiy service uchun - Service 82154)
         if not self.secret_key:
             logger.error("CLICK_SECRET_KEY is empty, using default")
-            self.secret_key = '08ClKUoBemAxyM'
+            self.secret_key = 'XZC6u3JBBh'
         
         # Validate that all required fields are set (non-empty after strip)
         if not self.service_id:
-            logger.error("CLICK_SERVICE_ID is empty, using default: 89248")
-            self.service_id = '89248'
+            logger.error("CLICK_SERVICE_ID is empty, using default: 82154")
+            self.service_id = '82154'
         if not self.merchant_user_id:
-            logger.error("CLICK_MERCHANT_USER_ID is empty, using default: 72021")
-            self.merchant_user_id = '72021'
+            logger.error("CLICK_MERCHANT_USER_ID is empty, using default: 63536")
+            self.merchant_user_id = '63536'
         if not self.merchant_id:
             logger.error("CLICK_MERCHANT_ID is empty, using default: 45730")
             self.merchant_id = '45730'
