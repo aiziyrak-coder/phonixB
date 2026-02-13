@@ -57,11 +57,11 @@ class UserSerializer(serializers.ModelSerializer):
 class RegisterSerializer(serializers.ModelSerializer):
     """Serializer for user registration"""
     
-    password = serializers.CharField(write_only=True, min_length=8)
-    password_confirm = serializers.CharField(write_only=True, min_length=8)
-    affiliation = serializers.CharField(required=False, allow_blank=True, default='')
+    password = serializers.CharField(write_only=True, min_length=6)  # Osonlashtirilgan: 6 belgi kifoya
+    password_confirm = serializers.CharField(write_only=True, min_length=6)
+    affiliation = serializers.CharField(required=False, allow_blank=True, default='N/A')  # Ixtiyoriy
     phone = serializers.CharField(required=True, max_length=20)
-    email = serializers.EmailField(required=True, max_length=255)
+    email = serializers.EmailField(required=False, allow_blank=True, max_length=255)  # Ixtiyoriy - avtomatik yaratiladi
     first_name = serializers.CharField(required=True, max_length=150)
     last_name = serializers.CharField(required=True, max_length=150)
     
@@ -98,27 +98,23 @@ class RegisterSerializer(serializers.ModelSerializer):
         return cleaned_phone
     
     def validate_password(self, value):
-        """Validate password strength"""
+        """Validate password strength - OSON PAROL TALABLARI"""
         if not value:
             raise serializers.ValidationError('Parol kiritilishi shart')
         
-        if len(value) < 8:
-            raise serializers.ValidationError('Parol kamida 8 ta belgidan iborat bo\'lishi kerak')
+        # Minimal 6 ta belgi kifoya (osonlashtirilgan)
+        if len(value) < 6:
+            raise serializers.ValidationError('Parol kamida 6 ta belgidan iborat bo\'lishi kerak')
         
-        # Check for at least one digit
-        if not any(char.isdigit() for char in value):
-            raise serializers.ValidationError('Parol kamida bitta raqamni o\'z ichiga olishi kerak')
-        
-        # Check for at least one letter
-        if not any(char.isalpha() for char in value):
-            raise serializers.ValidationError('Parol kamida bitta harfni o\'z ichiga olishi kerak')
+        # Raqam va harf talab qilinmaydi - har qanday belgilar kifoya
+        # Bu ro'yxatdan o'tishni osonlashtiradi
         
         return value
     
     def validate_email(self, value):
-        """Validate email format"""
-        if not value:
-            raise serializers.ValidationError('Email kiritilishi shart')
+        """Validate email format - Ixtiyoriy"""
+        if not value or not value.strip():
+            return ''  # Bo'sh bo'lishi mumkin, avtomatik yaratiladi
         
         # Basic email validation (Django's EmailField already does this, but add extra check)
         if '@' not in value or '.' not in value.split('@')[1]:
@@ -138,6 +134,14 @@ class RegisterSerializer(serializers.ModelSerializer):
         affiliation = attrs.get('affiliation', '').strip()
         if not affiliation:
             attrs['affiliation'] = 'N/A'  # Default value if empty
+        
+        # Email bo'lmasa, avtomatik yaratish (telefon raqamdan + timestamp)
+        email = attrs.get('email', '').strip()
+        if not email:
+            import time
+            phone = attrs.get('phone', '').strip()
+            timestamp = int(time.time())
+            attrs['email'] = f"{phone}_{timestamp}@temp.phoenix.uz"  # Unique email
         
         # Validate first_name and last_name are not empty
         if not attrs.get('first_name', '').strip():
