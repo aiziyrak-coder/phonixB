@@ -230,33 +230,50 @@ class LoginSerializer(serializers.Serializer):
         # Database may store phone with + or without +
         user = None
         
-        # Try 1: With + prefix (most common in database) - 998XXXXXXXXX format
+        # Log for debugging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Attempting login with normalized phone: {phone_digits}")
+        
+        # Try 1: With + prefix (most common in database) - +998XXXXXXXXX format
         user = authenticate(request=self.context.get('request'),
                           username=f'+{phone_digits}', password=password)
+        if user:
+            logger.info(f"Login successful with +{phone_digits}")
         
         # Try 2: Without + prefix - 998XXXXXXXXX format
         if not user:
             user = authenticate(request=self.context.get('request'),
                               username=phone_digits, password=password)
+            if user:
+                logger.info(f"Login successful with {phone_digits}")
         
-        # Try 3: With + prefix but without country code - 9XXXXXXXX format (if phone_digits is 12, try last 9)
+        # Try 3: With + prefix but without country code - +9XXXXXXXX format (if phone_digits is 12, try last 9)
         if not user and len(phone_digits) == 12:
             last_9_digits = phone_digits[-9:]
             user = authenticate(request=self.context.get('request'),
                               username=f'+{last_9_digits}', password=password)
+            if user:
+                logger.info(f"Login successful with +{last_9_digits}")
             if not user:
                 user = authenticate(request=self.context.get('request'),
                                   username=last_9_digits, password=password)
+                if user:
+                    logger.info(f"Login successful with {last_9_digits}")
         
         # Try 4: Original format if it was different
         if not user and phone != phone_digits and phone != f'+{phone_digits}':
             # Try original phone as-is
             user = authenticate(request=self.context.get('request'),
                               username=phone, password=password)
+            if user:
+                logger.info(f"Login successful with original phone: {phone}")
             # Try original phone with + prefix
             if not user and not phone.startswith('+'):
                 user = authenticate(request=self.context.get('request'),
                                   username=f'+{phone}', password=password)
+                if user:
+                    logger.info(f"Login successful with +{phone}")
         
         if not user:
             raise serializers.ValidationError({'non_field_errors': ['Telefon raqam yoki parol noto\'g\'ri']})
