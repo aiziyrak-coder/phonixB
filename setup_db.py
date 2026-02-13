@@ -11,12 +11,16 @@ def setup_database():
     User = get_user_model()
     
     # Create superuser if it doesn't exist
+    # NOTE: Test parollar olib tashlandi - production'da faqat haqiqiy parollar ishlatiladi
     if not User.objects.filter(phone='+998910574905').exists():
+        # Production'da parol environment variable'dan olinishi kerak
+        import os
+        admin_password = os.environ.get('ADMIN_PASSWORD', 'changeme123!')
         User.objects.create_superuser(
             phone='+998910574905',
             email='admin@example.com',
             full_name='Admin User',
-            password='admin123',
+            password=admin_password,
             is_active=True,
             is_staff=True
         )
