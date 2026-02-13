@@ -256,7 +256,7 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', 'AIzaSyBvdPzXpZyjqydWisq4_tM4pxMIQM
 # PHOENIX service credentials (new integration from 2025-12-18)
 CLICK_MERCHANT_ID = os.getenv('CLICK_MERCHANT_ID', '45730')
 CLICK_SERVICE_ID = os.getenv('CLICK_SERVICE_ID', '89248')
-CLICK_SECRET_KEY = os.getenv('CLICK_SECRET_KEY', '08ClKUoBemAxyM')
+CLICK_SECRET_KEY = os.getenv('CLICK_SECRET_KEY', '08CIKUoBemAxyM')
 CLICK_MERCHANT_USER_ID = os.getenv('CLICK_MERCHANT_USER_ID', '72021')
 
 # Click Service-specific secret keys (Click'dan kelgan service_id ga mos)
@@ -268,6 +268,8 @@ CLICK_SERVICE_82155_SECRET_KEY = os.getenv('CLICK_SERVICE_82155_SECRET_KEY', 'ic
 CLICK_SERVICE_82155_MERCHANT_USER_ID = os.getenv('CLICK_SERVICE_82155_MERCHANT_USER_ID', '64985')
 # Service 89248 uchun (yangi PHOENIX service)
 CLICK_SERVICE_89248_SECRET_KEY = os.getenv('CLICK_SERVICE_89248_SECRET_KEY', '08CIKUoBemAxyM')
+# Service 88045 uchun (PHOENIX - yangi service)
+CLICK_SERVICE_88045_SECRET_KEY = os.getenv('CLICK_SERVICE_88045_SECRET_KEY', 'EcyUxjPNLqxxZo')
 
 # Payme Payment Settings
 PAYME_MERCHANT_ID = os.getenv('PAYME_MERCHANT_ID', '')

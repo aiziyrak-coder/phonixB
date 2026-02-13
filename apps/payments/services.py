@@ -33,10 +33,12 @@ class ClickPaymentService:
         # Service 82154 uchun (Ilmiyfaoliyat.uz - Click bergan kalitlar)
         # Service 82155 uchun (Phoenix publication - Click bergan kalitlar)
         # Service 89248 uchun (yangi PHOENIX service)
+        # Service 88045 uchun (PHOENIX - yangi service)
         self.service_secret_keys = {
             '82154': getattr(settings, 'CLICK_SERVICE_82154_SECRET_KEY', 'XZC6u3JBBh'),  # Ilmiyfaoliyat.uz
             '82155': getattr(settings, 'CLICK_SERVICE_82155_SECRET_KEY', 'icHbYQnMBx'),  # Phoenix publication
             '89248': getattr(settings, 'CLICK_SERVICE_89248_SECRET_KEY', '08CIKUoBemAxyM'),  # Yangi PHOENIX service
+            '88045': getattr(settings, 'CLICK_SERVICE_88045_SECRET_KEY', 'EcyUxjPNLqxxZo'),  # PHOENIX - yangi service
         }
         
         # Default secret key (asosiy service uchun)
