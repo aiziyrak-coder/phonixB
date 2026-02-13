@@ -260,8 +260,12 @@ CLICK_SECRET_KEY = os.getenv('CLICK_SECRET_KEY', '08ClKUoBemAxyM')
 CLICK_MERCHANT_USER_ID = os.getenv('CLICK_MERCHANT_USER_ID', '72021')
 
 # Click Service-specific secret keys (Click'dan kelgan service_id ga mos)
-# Service 82154 uchun (eski service - Click bergan kalitlar)
+# Service 82154 uchun (Ilmiyfaoliyat.uz - Click bergan kalitlar)
 CLICK_SERVICE_82154_SECRET_KEY = os.getenv('CLICK_SERVICE_82154_SECRET_KEY', 'XZC6u3JBBh')
+CLICK_SERVICE_82154_MERCHANT_USER_ID = os.getenv('CLICK_SERVICE_82154_MERCHANT_USER_ID', '63536')
+# Service 82155 uchun (Phoenix publication - Click bergan kalitlar)
+CLICK_SERVICE_82155_SECRET_KEY = os.getenv('CLICK_SERVICE_82155_SECRET_KEY', 'icHbYQnMBx')
+CLICK_SERVICE_82155_MERCHANT_USER_ID = os.getenv('CLICK_SERVICE_82155_MERCHANT_USER_ID', '64985')
 # Service 89248 uchun (yangi PHOENIX service)
 CLICK_SERVICE_89248_SECRET_KEY = os.getenv('CLICK_SERVICE_89248_SECRET_KEY', '08ClKUoBemAxyM')
 
