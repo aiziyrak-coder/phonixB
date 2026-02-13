@@ -255,9 +255,9 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', 'AIzaSyBvdPzXpZyjqydWisq4_tM4pxMIQM
 # Click Payment Settings
 # PHOENIX service credentials (new integration from 2025-12-18)
 CLICK_MERCHANT_ID = os.getenv('CLICK_MERCHANT_ID', '45730')
-CLICK_SERVICE_ID = os.getenv('CLICK_SERVICE_ID', '89248')
-CLICK_SECRET_KEY = os.getenv('CLICK_SECRET_KEY', '08ClKUoBemAxyM')
-CLICK_MERCHANT_USER_ID = os.getenv('CLICK_MERCHANT_USER_ID', '72021')
+CLICK_SERVICE_ID = os.getenv('CLICK_SERVICE_ID', '82154')  # Default: Service 82154 (barcha to'lovlar shu service orqali)
+CLICK_SECRET_KEY = os.getenv('CLICK_SECRET_KEY', 'XZC6u3JBBh')  # Service 82154 secret key
+CLICK_MERCHANT_USER_ID = os.getenv('CLICK_MERCHANT_USER_ID', '63536')  # Service 82154 merchant user id
 
 # Click Service-specific secret keys (Click'dan kelgan service_id ga mos)
 # Service 82154 uchun (Ilmiyfaoliyat.uz - Click bergan kalitlar)
