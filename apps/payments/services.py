@@ -788,6 +788,8 @@ class ClickPaymentService:
         IMPORTANT: SECRET_KEY comes AFTER service_id and BEFORE merchant_trans_id!
         error parameter is NOT included in signature!
         """
+        from django.db import transaction as db_transaction
+        
         try:
             click_trans_id = data.get('click_trans_id')
             service_id = data.get('service_id')  # Complete'da ham service_id keladi!
@@ -800,12 +802,13 @@ class ClickPaymentService:
             sign_string = data.get('sign_string')
             
             # Find transaction first to get service_id (if not in request)
+            # Use select_for_update to lock transaction row during update
             try:
-                transaction = Transaction.objects.get(id=merchant_trans_id)
+                transaction = Transaction.objects.select_for_update().get(id=merchant_trans_id)
             except Transaction.DoesNotExist:
                 # Try to find by merchant_trans_id field
                 try:
-                    transaction = Transaction.objects.get(merchant_trans_id=merchant_trans_id)
+                    transaction = Transaction.objects.select_for_update().get(merchant_trans_id=merchant_trans_id)
                 except Transaction.DoesNotExist:
                     return {'error': -5, 'error_note': 'Transaction not found'}
             
@@ -856,15 +859,20 @@ class ClickPaymentService:
                 logger.error(f"Correct format: md5(click_trans_id + service_id + SECRET_KEY + merchant_trans_id + merchant_prepare_id + amount + action + sign_time)")
                 return {'error': -1, 'error_note': 'Invalid signature'}
             
-            # Update transaction status based on error code
-            if error == 0:
-                transaction.status = 'completed'
-                transaction.completed_at = timezone.now()
-                transaction.click_paydoc_id = data.get('click_paydoc_id', transaction.click_paydoc_id or '')
-            else:
-                transaction.status = 'failed'
-            
-            transaction.save()
+            # Use atomic transaction to ensure status update is saved consistently
+            with db_transaction.atomic():
+                # Update transaction status based on error code
+                if error == 0:
+                    transaction.status = 'completed'
+                    transaction.completed_at = timezone.now()
+                    transaction.click_paydoc_id = data.get('click_paydoc_id', transaction.click_paydoc_id or '')
+                    transaction.click_trans_id = click_trans_id  # Save Click transaction ID
+                else:
+                    transaction.status = 'failed'
+                
+                transaction.save(update_fields=['status', 'completed_at', 'click_paydoc_id', 'click_trans_id'])
+                
+                logger.info(f"Transaction {transaction.id} status updated to '{transaction.status}'")
             
             return {
                 'click_trans_id': click_trans_id,
