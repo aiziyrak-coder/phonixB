@@ -17,6 +17,18 @@ class Article(models.Model):
         ('Accepted', 'Qabul qilingan'),
         ('Rejected', 'Rad etilgan'),
         ('Published', 'Nashr etilgan'),
+        # Book-specific workflow statuses
+        ('ContractProcessing', 'Shartnoma rasmiylashtirilmoqda'),
+        ('IsbnProcessing', 'ISBN olinmoqda'),
+        ('AuthorDataVerified', 'Muallif ma`lumotlari tasdiqlandi'),
+        ('PaymentCompleted', 'To`lov jarayoni yakunlandi'),
+        ('SentToPrint', 'Bosmaga berildi'),
+        ('Printing', 'Chop etilmoqda'),
+        ('Ready', 'Tayyor'),
+        ('Packaging', 'Qadoqlanmoqda'),
+        ('Shipping', 'Yuborilmoqda (pochta)'),
+        ('Delivered', 'Yetkazildi'),
+        ('ProcessPaused', 'Jarayon to`xtatildi'),
     )
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

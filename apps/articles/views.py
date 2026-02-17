@@ -1,9 +1,9 @@
 from rest_framework import viewsets, status
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from .models import Article, ArticleVersion, ActivityLog
-from .serializers import ArticleSerializer, CreateArticleSerializer, ArticleVersionSerializer
+from .serializers import ArticleSerializer, CreateArticleSerializer, ArticleVersionSerializer, PublicArticleShareSerializer
 from django.utils import timezone
 from apps.services import get_gemini_service
 import logging
@@ -197,3 +197,19 @@ class ArticleViewSet(viewsets.ModelViewSet):
                 {'error': 'Plagiat tekshiruvida xatolik yuz berdi. Iltimos, qayta urinib ko\'ring.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def public_article_detail(request, pk):
+    """Public endpoint for shared published article details."""
+    article = Article.objects.select_related('author', 'journal').filter(
+        pk=pk,
+        status='Published'
+    ).first()
+
+    if not article:
+        return Response({'detail': 'Maqola topilmadi yoki hali nashr etilmagan.'}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = PublicArticleShareSerializer(article, context={'request': request})
+    return Response(serializer.data)

@@ -3,177 +3,137 @@ from apps.users.models import User
 
 
 class Command(BaseCommand):
-    help = 'Test userlarni yaratish - Admin, Editor, Reviewer, Author, Accountant'
+    help = 'Barcha userlarni o\'chirib, har bir rol uchun 1ta demo user yaratish'
 
     def add_arguments(self, parser):
         parser.add_argument(
             '--reset',
             action='store_true',
-            help='Barcha test userlarni o\'chirib, qayta yaratish',
+            help='Barcha userlarni o\'chirib, qayta yaratish (default behavior)',
         )
 
     def handle(self, *args, **options):
-        reset = options.get('reset', False)
-        
-        test_users = [
+        # 1. BARCHA userlarni o'chirish
+        total_deleted = User.objects.count()
+        User.objects.all().delete()
+        self.stdout.write(
+            self.style.WARNING(f'🗑️  {total_deleted} ta user o\'chirildi.')
+        )
+
+        # 2. Har bir rol uchun 1ta demo user
+        demo_users = [
             {
                 'phone': '998901001001',
-                'email': 'admin@ilmiyfaoliyat.uz',
-                'first_name': 'Admin',
-                'last_name': 'Bosh',
-                'patronymic': 'Superuser',
+                'email': 'admin@phoenix.uz',
+                'first_name': 'Adminjon',
+                'last_name': 'Boshqaruvov',
+                'patronymic': 'Superovich',
                 'role': 'super_admin',
                 'affiliation': 'Phoenix Scientific Platform',
-                'password': 'Admin@123456',
+                'password': 'Demo@admin1',
                 'is_staff': True,
                 'is_superuser': True,
             },
             {
                 'phone': '998901001002',
-                'email': 'editor@ilmiyfaoliyat.uz',
-                'first_name': 'Tahrirchi',
-                'last_name': 'Bosh',
-                'patronymic': 'Admin',
+                'email': 'editor@phoenix.uz',
+                'first_name': 'Tahrirjon',
+                'last_name': 'Jurnalbekov',
+                'patronymic': 'Adminovich',
                 'role': 'journal_admin',
                 'affiliation': 'Phoenix Scientific Platform',
-                'password': 'Editor@123456',
+                'password': 'Demo@editor1',
                 'is_staff': True,
                 'is_superuser': False,
             },
             {
                 'phone': '998901001003',
-                'email': 'reviewer1@ilmiyfaoliyat.uz',
-                'first_name': 'Reviewer',
-                'last_name': 'Birinchi',
-                'patronymic': 'Ilmiy',
+                'email': 'reviewer@phoenix.uz',
+                'first_name': 'Taqrizjon',
+                'last_name': 'Ilmiyev',
+                'patronymic': 'Reviewerovich',
                 'role': 'reviewer',
-                'affiliation': 'Tashkent State University',
-                'password': 'Reviewer@123456',
+                'affiliation': 'Toshkent Davlat Universiteti',
+                'password': 'Demo@review1',
                 'is_staff': False,
                 'is_superuser': False,
-                'specializations': ['Computer Science', 'Information Technology'],
+                'specializations': ['Computer Science', 'Mathematics'],
             },
             {
                 'phone': '998901001004',
-                'email': 'reviewer2@ilmiyfaoliyat.uz',
-                'first_name': 'Reviewer',
-                'last_name': 'Ikkinchi',
-                'patronymic': 'Ilmiy',
-                'role': 'reviewer',
-                'affiliation': 'National University of Uzbekistan',
-                'password': 'Reviewer@123456',
+                'email': 'author@phoenix.uz',
+                'first_name': 'Muallifjon',
+                'last_name': 'Yozuvchiev',
+                'patronymic': 'Ilmiyovich',
+                'role': 'author',
+                'affiliation': 'Toshkent Axborot Texnologiyalari Universiteti',
+                'password': 'Demo@author1',
                 'is_staff': False,
                 'is_superuser': False,
-                'specializations': ['Mathematics', 'Physics'],
             },
             {
                 'phone': '998901001005',
-                'email': 'author1@ilmiyfaoliyat.uz',
-                'first_name': 'Muallif',
-                'last_name': 'Birinchi',
-                'patronymic': 'Ilmiy',
-                'role': 'author',
-                'affiliation': 'Tashkent Institute of Technology',
-                'password': 'Author@123456',
-                'is_staff': False,
-                'is_superuser': False,
-            },
-            {
-                'phone': '998901001006',
-                'email': 'accountant@ilmiyfaoliyat.uz',
-                'first_name': 'Buxgalter',
-                'last_name': 'Bosh',
-                'patronymic': 'Moliyaviy',
+                'email': 'accountant@phoenix.uz',
+                'first_name': 'Buxgalterjon',
+                'last_name': 'Moliyaev',
+                'patronymic': 'Hisobovich',
                 'role': 'accountant',
                 'affiliation': 'Phoenix Scientific Platform',
-                'password': 'Accountant@123456',
+                'password': 'Demo@account1',
                 'is_staff': True,
                 'is_superuser': False,
             },
         ]
 
         created_count = 0
-        existing_count = 0
-        
-        for user_data in test_users:
+
+        for user_data in demo_users:
+            password = user_data.pop('password')
             phone = user_data['phone']
             email = user_data['email']
-            password = user_data.pop('password')
-            
+
             try:
-                if User.objects.filter(phone=phone).exists():
-                    if reset:
-                        # Delete and recreate
-                        user = User.objects.get(phone=phone)
-                        user.delete()
-                        self.stdout.write(
-                            self.style.SUCCESS(
-                                f'♻️  Qayta yaratildi: {email} ({user_data["role"]})'
-                            )
-                        )
-                        user = User.objects.create_user(
-                            phone=phone,
-                            email=email,
-                            password=password,
-                            **user_data
-                        )
-                        user.save()
-                        created_count += 1
-                    else:
-                        self.stdout.write(
-                            self.style.WARNING(
-                                f'⚠️  Mavjud: {email} ({user_data["role"]})'
-                            )
-                        )
-                        existing_count += 1
+                user = User.objects.create_user(
+                    phone=phone,
+                    password=password,
+                    **{k: v for k, v in user_data.items() if k != 'phone'}
+                )
+
+                # Gamification
+                if user.role == 'author':
+                    user.gamification_badges = ['Yangi Muallif']
+                elif user.role == 'reviewer':
+                    user.gamification_badges = ['Yangi Reviewer']
+                    user.reviews_completed = 5
                 else:
-                    # Create new user
-                    user = User.objects.create_user(
-                        phone=phone,
-                        email=email,
-                        password=password,
-                        **user_data
+                    user.gamification_badges = ['Administrator']
+                    user.gamification_points = 1000
+
+                user.save()
+                created_count += 1
+
+                self.stdout.write(
+                    self.style.SUCCESS(
+                        f'✅ {user.role:15s} | {phone} | {password} | {email}'
                     )
-                    
-                    # Set gamification
-                    if user.role == 'author':
-                        user.gamification_badges = ['Yangi Muallif']
-                    elif user.role == 'reviewer':
-                        user.gamification_badges = ['Yangi Reviewer']
-                    else:
-                        user.gamification_badges = ['Administrator']
-                        user.gamification_points = 1000
-                    
-                    user.save()
-                    
-                    self.stdout.write(
-                        self.style.SUCCESS(
-                            f'✅ Yaratildi: {email} ({user.role})\n'
-                            f'   Password: {password}\n'
-                            f'   Phone: {phone}'
-                        )
-                    )
-                    created_count += 1
-            
+                )
+                # Put password back for summary
+                user_data['password'] = password
+
             except Exception as e:
                 self.stdout.write(
                     self.style.ERROR(f'❌ Xatolik: {email} - {str(e)}')
                 )
-        
-        self.stdout.write('\n' + '='*60)
-        self.stdout.write(
-            self.style.SUCCESS(
-                f'✅ Mustavoyd yaratilngani:\n'
-                f'   Yangi userlar: {created_count}\n'
-                f'   Mavjud userlar: {existing_count}'
-            )
-        )
-        self.stdout.write('='*60)
-        
-        # Print login info
-        self.stdout.write('\n🔐 LOGIN CREDENTIALS:\n')
-        for user_data in test_users:
+                user_data['password'] = password
+
+        self.stdout.write('\n' + '=' * 70)
+        self.stdout.write(self.style.SUCCESS(f'✅ Jami {created_count} ta demo user yaratildi.'))
+        self.stdout.write('=' * 70)
+
+        self.stdout.write('\n🔐 DEMO LOGIN MA\'LUMOTLARI:\n')
+        self.stdout.write(f'{"Rol":<17} {"Telefon":<15} {"Parol":<17} {"Email"}')
+        self.stdout.write('-' * 70)
+        for u in demo_users:
             self.stdout.write(
-                f"{user_data['email']}\n"
-                f"  Role: {user_data['role']}\n"
+                f'{u["role"]:<17} {u["phone"]:<15} {u["password"]:<17} {u["email"]}'
             )

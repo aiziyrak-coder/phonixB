@@ -437,5 +437,5 @@ def payme_callback_view(request):
                 'code': -31008,
                 'message': 'Internal server error'
             },
-            'id': request.id if hasattr(request, 'id') else None
+            'id': None
         }, status=500)

@@ -152,14 +152,15 @@ def register(request):
         data = None
         if hasattr(request, 'data') and request.data:
             data = request.data
-            logger.info(f"Using request.data: {data}")
+            logger.info(f"Using request.data with keys: {list(data.keys()) if hasattr(data, 'keys') else 'non-dict payload'}")
         elif hasattr(request, 'body') and request.body:
             try:
                 data = json.loads(request.body.decode('utf-8'))
-                logger.info(f"Parsed from body: {data}")
+                logger.info(f"Parsed request body with keys: {list(data.keys()) if isinstance(data, dict) else 'non-dict payload'}")
             except (json.JSONDecodeError, UnicodeDecodeError) as e:
                 logger.error(f"JSON decode error: {e}, body: {request.body[:200]}")
                 return Response({'detail': 'Invalid JSON format', 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
         else:
             logger.error("No request data found - both request.data and request.body are empty")
             return Response({'detail': 'No data provided'}, status=status.HTTP_400_BAD_REQUEST)
