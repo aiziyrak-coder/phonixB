@@ -176,8 +176,9 @@ class ArticleSerializer(serializers.ModelSerializer):
 class CreateArticleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Article
-        fields = ('title', 'abstract', 'keywords', 'journal', 'final_pdf_path', 
+        fields = ('id', 'title', 'abstract', 'keywords', 'journal', 'final_pdf_path', 
                   'additional_document_path', 'page_count', 'fast_track')
+        read_only_fields = ('id',)
     
     def create(self, validated_data):
         validated_data['author'] = self.context['request'].user

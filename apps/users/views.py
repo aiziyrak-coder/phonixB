@@ -91,6 +91,17 @@ class UserViewSet(viewsets.ModelViewSet):
         )
         total_revenue = abs(float(financial_stats['total_revenue'] or 0))
         total_transactions = financial_stats['total_count'] or 0
+
+        # Book publication order statistics
+        book_orders_qs = Transaction.objects.filter(service_type='book_publication')
+        book_orders_total = book_orders_qs.count()
+        book_orders_completed = book_orders_qs.filter(status='completed').count()
+        book_orders_pending = book_orders_qs.filter(status='pending').count()
+        book_orders_failed = book_orders_qs.filter(status='failed').count()
+        book_revenue_stats = book_orders_qs.filter(status='completed').aggregate(
+            total_revenue=Sum('amount')
+        )
+        book_total_revenue = abs(float(book_revenue_stats['total_revenue'] or 0))
         
         # Get journal admin statistics (optimized with select_related)
         journal_admins = User.objects.filter(role='journal_admin').select_related()
@@ -124,7 +135,12 @@ class UserViewSet(viewsets.ModelViewSet):
             },
             'finance': {
                 'total_revenue': total_revenue,
-                'total_transactions': total_transactions
+                'total_transactions': total_transactions,
+                'book_orders_total': book_orders_total,
+                'book_orders_completed': book_orders_completed,
+                'book_orders_pending': book_orders_pending,
+                'book_orders_failed': book_orders_failed,
+                'book_total_revenue': book_total_revenue,
             },
             'journal_admins': journal_admin_stats
         }

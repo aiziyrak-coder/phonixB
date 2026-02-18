@@ -4,9 +4,11 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from .models import Article, ArticleVersion, ActivityLog
 from .serializers import ArticleSerializer, CreateArticleSerializer, ArticleVersionSerializer, PublicArticleShareSerializer
+from apps.notifications.models import Notification
 from django.utils import timezone
 from apps.services import get_gemini_service
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +39,59 @@ class ArticleViewSet(viewsets.ModelViewSet):
         if self.action == 'create':
             return CreateArticleSerializer
         return ArticleSerializer
+
+    def perform_create(self, serializer):
+        article = serializer.save()
+        self._run_initial_plagiarism_check(article)
+
+    def _run_initial_plagiarism_check(self, article):
+        """Run advanced plagiarism/AI check right after article is created (best-effort)."""
+        if not article.final_pdf_path:
+            return
+
+        try:
+            gemini_service = get_gemini_service()
+
+            try:
+                file_path = article.final_pdf_path.path
+            except Exception:
+                from django.conf import settings
+                file_path = os.path.join(settings.MEDIA_ROOT, str(article.final_pdf_path))
+
+            if not os.path.exists(file_path):
+                logger.warning(f"Plagiarism auto-check skipped: file not found at {file_path}")
+                return
+
+            text_content = gemini_service.extract_text_from_pdf(file_path)
+            if not text_content or len(text_content.strip()) < 50:
+                text_content = article.abstract or article.title or ""
+
+            if not text_content or len(text_content.strip()) < 50:
+                logger.warning(f"Plagiarism auto-check skipped: insufficient text for article {article.id}")
+                return
+
+            result = gemini_service.check_plagiarism(text_content)
+            plagiarism_percentage = result.get('plagiarism_percentage', 0)
+            ai_content_percentage = result.get('ai_content_percentage', 0)
+            report = result.get('report', {})
+
+            article.plagiarism_percentage = plagiarism_percentage
+            article.ai_content_percentage = ai_content_percentage
+            article.plagiarism_checked_at = timezone.now()
+            article.plagiarism_report = report
+            article.save(update_fields=[
+                'plagiarism_percentage', 'ai_content_percentage',
+                'plagiarism_checked_at', 'plagiarism_report'
+            ])
+
+            ActivityLog.objects.create(
+                article=article,
+                user=self.request.user,
+                action='Plagiarism check completed',
+                details=f'Plagiarism: {plagiarism_percentage}%, AI Content: {ai_content_percentage}%'
+            )
+        except Exception as e:
+            logger.error(f"Auto plagiarism check failed for article {article.id}: {str(e)}", exc_info=True)
     
     @action(detail=True, methods=['post'])
     def increment_views(self, request, pk=None):
@@ -96,6 +151,21 @@ class ArticleViewSet(viewsets.ModelViewSet):
             action=f'Status changed from {old_status} to {new_status}',
             details=request.data.get('reason', '')
         )
+
+        # Auto-notify author about status change
+        status_labels = dict(Article.STATUS_CHOICES)
+        new_label = status_labels.get(new_status, new_status)
+        try:
+            Notification.notify(
+                user=article.author,
+                title='Maqola holati yangilandi',
+                message=f'"{article.title}" maqolangiz holati "{new_label}" ga o\'zgartirildi.',
+                notification_type='status_change',
+                link=f'/articles/{article.id}',
+                metadata={'article_id': str(article.id), 'old_status': old_status, 'new_status': new_status},
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send status notification: {e}")
         
         return Response({'status': 'success', 'new_status': new_status})
     
@@ -171,11 +241,16 @@ class ArticleViewSet(viewsets.ModelViewSet):
             
             plagiarism_percentage = result.get('plagiarism_percentage', 0)
             ai_content_percentage = result.get('ai_content_percentage', 0)
+            report = result.get('report', {})
             
             article.plagiarism_percentage = plagiarism_percentage
             article.ai_content_percentage = ai_content_percentage
             article.plagiarism_checked_at = timezone.now()
-            article.save()
+            article.plagiarism_report = report
+            article.save(update_fields=[
+                'plagiarism_percentage', 'ai_content_percentage',
+                'plagiarism_checked_at', 'plagiarism_report'
+            ])
             
             ActivityLog.objects.create(
                 article=article,
@@ -187,7 +262,9 @@ class ArticleViewSet(viewsets.ModelViewSet):
             return Response({
                 'plagiarism': plagiarism_percentage,
                 'ai_content': ai_content_percentage,
-                'checked_at': article.plagiarism_checked_at
+                'originality': result.get('originality', 0),
+                'checked_at': article.plagiarism_checked_at,
+                'report': report,
             })
         except Exception as e:
             import logging

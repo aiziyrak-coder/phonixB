@@ -5,6 +5,7 @@ from .models import PeerReview
 class PeerReviewSerializer(serializers.ModelSerializer):
     reviewer_name = serializers.SerializerMethodField()
     article_title = serializers.SerializerMethodField()
+    overall_score = serializers.SerializerMethodField()
     
     class Meta:
         model = PeerReview
@@ -16,3 +17,6 @@ class PeerReviewSerializer(serializers.ModelSerializer):
     
     def get_article_title(self, obj):
         return obj.article.title
+
+    def get_overall_score(self, obj):
+        return obj.overall_score

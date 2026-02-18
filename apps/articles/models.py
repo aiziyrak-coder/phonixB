@@ -60,10 +60,11 @@ class Article(models.Model):
     page_count = models.IntegerField(default=0)
     fast_track = models.BooleanField(default=False)
     
-    # Plagiarism
+    # Plagiarism & AI Detection (advanced report)
     plagiarism_percentage = models.FloatField(default=0)
     ai_content_percentage = models.FloatField(default=0)
     plagiarism_checked_at = models.DateTimeField(null=True, blank=True)
+    plagiarism_report = models.JSONField(default=dict, blank=True)
     
     class Meta:
         ordering = ['-submission_date']
