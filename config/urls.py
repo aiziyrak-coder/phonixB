@@ -19,6 +19,7 @@ urlpatterns = [
     path('api/v1/translations/', include('apps.translations.urls')),
     path('api/v1/reviews/', include('apps.reviews.urls')),
     path('api/v1/notifications/', include('apps.notifications.urls')),
+    path('api/v1/udc/', include('apps.udc.urls')),
     
     # JWT token refresh
     path('api/v1/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),

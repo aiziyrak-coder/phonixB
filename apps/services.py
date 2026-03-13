@@ -397,34 +397,31 @@ Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
   "ai_content_percentage": <float 0-100>,
   "originality": <float 0-100>,
   "plagiarism_breakdown": {{
-    "direct_copy": <float 0-100, verbatim copied text percentage>,
-    "paraphrase": <float 0-100, paraphrased from sources>,
-    "mosaic": <float 0-100, mosaic/patchwork plagiarism>,
-    "self_citation": <float 0-100, self-citation/recycled text>
+    "direct_copy": <float 0-100>,
+    "paraphrase": <float 0-100>,
+    "mosaic": <float 0-100>,
+    "self_citation": <float 0-100>
   }},
   "ai_detection": {{
     "overall_ai_probability": <float 0-100>,
     "human_probability": <float 0-100>,
-    "mixed_probability": <float 0-100, human+AI mixed>,
+    "mixed_probability": <float 0-100>,
     "model_confidence": "<low|medium|high>",
-    "patterns": [
-      "<string: specific AI pattern detected, e.g. 'Uniform sentence structure in paragraphs 2-4'>",
-      "<string: another pattern>"
-    ]
+    "patterns": ["<string>"]
   }},
   "section_analysis": [
-    {{
-      "section_index": <int>,
-      "plagiarism_score": <float 0-100>,
-      "ai_score": <float 0-100>,
-      "flag": "<clean|suspicious|flagged>",
-      "note": "<brief explanation>"
-    }}
+    {{ "section_index": <int>, "plagiarism_score": <float>, "ai_score": <float>, "flag": "<clean|suspicious|flagged>", "note": "<string>" }}
   ],
-  "recommendations": [
-    "<string: actionable recommendation for improving originality>"
+  "recommendations": ["<string>"],
+  "sources": [
+    {{
+      "source": "<string: full URL where text might be found, e.g. https://scholar.google.com/scholar?q=ENCODED_QUERY or https://www.google.com/search?q=ENCODED_QUERY or https://cyberleninka.ru/... or real-looking academic URL>",
+      "snippet": "<string: short excerpt from the text that may be plagiarized (20-80 chars)>",
+      "similarity": <float 0-100, estimated match percentage for this source>
+    }}
   ]
-}}"""
+}}
+IMPORTANT: For "sources", do a deep analysis: identify specific phrases or sentences that look copied. For each, suggest a concrete search URL (Google Scholar, Google, CyberLeninka, eLibrary, ResearchGate, etc.) using the suspicious phrase as the search query (URL-encoded). Provide 0-8 sources. If no clear plagiarism, return empty sources array."""
 
             if USE_NEW_GENAI:
                 response = self.client.models.generate_content(
@@ -530,6 +527,16 @@ Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
             if plag < 30 and ai < 30:
                 recommendations.append("Matn yaxshi originallikka ega. Kichik tahrirlar bilan yanada yaxshilash mumkin.")
 
+        sources = []
+        if gemini and isinstance(gemini.get('sources'), list):
+            for s in gemini['sources'][:12]:
+                if isinstance(s, dict) and s.get('source'):
+                    sources.append({
+                        'source': str(s.get('source', '')).strip()[:500],
+                        'snippet': str(s.get('snippet', ''))[:300],
+                        'similarity': min(100, max(0, float(s.get('similarity', 0)))),
+                    })
+
         return {
             'plagiarism_percentage': plag,
             'ai_content_percentage': ai,
@@ -544,8 +551,56 @@ Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
                 'ai_detection': ai_detection,
                 'stylometric': heuristic['stylometric'],
                 'recommendations': recommendations,
-            }
+                'sources': sources,
+            },
+            'sources': sources,
         }
+
+    def suggest_udk(self, article_title, abstract, keywords, udc_reference_text):
+        """
+        AI deep analysis: suggest the most suitable UDK (Universal Decimal Classification) code
+        for the article based on its title, abstract and keywords. Uses udc_reference_text
+        (list of code + description) to pick the best match.
+        Returns {"udk_code": "...", "udk_description": "..."} or None on failure.
+        """
+        try:
+            keywords_str = ', '.join(keywords) if isinstance(keywords, (list, tuple)) else str(keywords or '')
+            prompt = f"""Sen ilmiy maqolalar uchun UDK (Universal o'nli klassifikatsiya) kodini tanlashda yordam beradigan mutaxassissan.
+
+MAQOLA:
+Sarlavha: {article_title or ''}
+Annotatsiya: {(abstract or '')[:1500]}
+Kalit so'zlar: {keywords_str}
+
+Quyidagi ro'yxatdan maqola mavzusiga ENG MOS va ENG ANIQ bitta UDK kodini tanla.
+MUHIM: Faqat ro'yxatda KO'RSATILGAN kodlardan birini qaytaring. Hech qachon 33, 9, 30, 61 kabi oddiy kodlar yozma — ro'yxatda bunday kodlar yo'q. Faqat nuqta bor aniq kod (masalan 332.1, 330.1, 001.892) tanlang.
+
+RUXSAT ETILGAN UDK RO'YXATI:
+{udc_reference_text}
+
+Javobni faqat quyidagi JSON formatida bering, boshqa matn yozma:
+{{"udk_code": "tanlangan aniq kod", "udk_description": "qisqa tavsif (o'zbekcha yoki ruscha)"}}
+"""
+            if USE_NEW_GENAI:
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt
+                )
+                result_text = response.text if hasattr(response, 'text') else str(response)
+            else:
+                response = self.model.generate_content(prompt)
+                result_text = response.text
+            text = (result_text or '').strip()
+            if '```' in text:
+                text = text.split('```')[1].replace('json', '').strip()
+            data = json.loads(text)
+            code = (data.get('udk_code') or '').strip()
+            desc = (data.get('udk_description') or '').strip()[:500]
+            if code:
+                return {'udk_code': code, 'udk_description': desc}
+        except Exception as e:
+            logger.error(f"Gemini suggest_udk failed: {e}", exc_info=True)
+        return None
 
 
 # Singleton instance - lazy initialization

@@ -13,6 +13,9 @@ class Transaction(models.Model):
         ('top_up', 'Top Up'),
         ('book_publication', 'Book Publication'),
         ('translation', 'Translation'),
+        ('udk_request', 'UDK so\'rov / Tasdiqlangan ma\'lumotnoma'),
+        ('article_sample', 'Maqola namuna olish (taqrizchiga yuborish)'),
+        ('doi_request', 'DOI raqami olish'),
     )
     
     STATUS_CHOICES = (
@@ -45,7 +48,12 @@ class Transaction(models.Model):
     # Payment provider (click, payme, etc)
     payment_provider = models.CharField(max_length=20, blank=True, default='')
     
+    # Failure reason from Click/Payme when status is failed/cancelled
+    error_note = models.CharField(max_length=500, blank=True, default='')
+    
     receipt_path = models.FileField(upload_to='receipts/', blank=True, null=True)
+    # Optional JSON for service-specific data (e.g. udk_request: udk_code, udk_description)
+    extra_data = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     

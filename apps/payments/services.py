@@ -1,5 +1,10 @@
 """
 Click Payment Integration Service
+
+Barcha to'lovlar bitta Click service orqali (Ilmiyfaoliyat.uz — service_id 82154).
+Callback URL'lar Click merchant panelda quyidagicha bo'lishi kerak:
+  Prepare: https://api.ilmiyfaoliyat.uz/api/v1/payments/click/prepare/
+  Complete: https://api.ilmiyfaoliyat.uz/api/v1/payments/click/complete/
 """
 from django.conf import settings
 from django.utils import timezone
@@ -7,9 +12,39 @@ import hashlib
 import time
 import requests
 import logging
+import uuid as uuid_module
 from .models import Transaction
 
 logger = logging.getLogger(__name__)
+
+
+def _find_transaction_by_merchant_trans_id(merchant_trans_id):
+    """
+    Find Transaction by merchant_trans_id (transaction_param from Click).
+    Click sends our transaction.id (UUID string). Normalize and try id then merchant_trans_id field.
+    """
+    if not merchant_trans_id:
+        return None
+    raw = str(merchant_trans_id).strip()
+    # Try as primary key (UUID) — support different casing
+    for val in (raw, raw.lower(), raw.upper()):
+        try:
+            uuid_val = uuid_module.UUID(val)
+            return Transaction.objects.get(id=uuid_val)
+        except (ValueError, Transaction.DoesNotExist):
+            pass
+    try:
+        return Transaction.objects.get(id=raw)
+    except (Transaction.DoesNotExist, ValueError):
+        pass
+    try:
+        return Transaction.objects.get(merchant_trans_id=raw)
+    except Transaction.DoesNotExist:
+        pass
+    try:
+        return Transaction.objects.get(merchant_trans_id=merchant_trans_id)
+    except Transaction.DoesNotExist:
+        return None
 
 
 class ClickPaymentService:
@@ -404,16 +439,17 @@ class ClickPaymentService:
         
         # If use_invoice is False, create direct payment URL without invoice
         if not use_invoice:
-            # Direct payment URL - invoice yaratmasdan
-            # Click dokumentatsiyasiga ko'ra: https://docs.click.uz/click-button/
-            # Majburiy parametrlar: merchant_id, service_id, transaction_param, amount
-            # Ixtiyoriy: return_url, card_type
+            # Click — Установка кнопки оплаты (Вариант 1 — Переход по ссылке)
+            # https://my.click.uz/services/pay?service_id=&merchant_id=&amount=&transaction_param=&return_url=&card_type=
+            # Majburiy: merchant_id, service_id, transaction_param, amount. Ixtiyoriy: return_url, card_type
             
+            from django.conf import settings as django_settings
+            from urllib.parse import quote
+
             merchant_id_int = int(self.merchant_id)
-            transaction_param = str(transaction.id)  # transaction_param = merchant_trans_id
+            transaction_param = str(transaction.id)  # transaction_param = merchant_trans_id (ID заказа)
             amount_formatted = f"{float(transaction.amount):.2f}"  # Format: N.NN
             
-            # Base URL with mandatory parameters
             payment_url = (
                 f"https://my.click.uz/services/pay"
                 f"?merchant_id={merchant_id_int}"
@@ -421,13 +457,9 @@ class ClickPaymentService:
                 f"&transaction_param={transaction_param}"
                 f"&amount={amount_formatted}"
             )
-            
-            # Add optional return_url if available
-            # Frontend'dan kelgan return_url ni qo'shish mumkin, lekin hozircha ixtiyoriy
-            # return_url = request.GET.get('return_url', '')
-            # if return_url:
-            #     payment_url += f"&return_url={return_url}"
-            
+            return_url = f"{getattr(django_settings, 'FRONTEND_BASE_URL', 'http://localhost:3000').rstrip('/')}/#/payment/click?transaction_id={transaction.id}"
+            payment_url += f"&return_url={quote(return_url)}"
+
             logger.info(f"Direct payment URL created (Click format): {payment_url}")
             logger.info(f"Parameters: merchant_id={merchant_id_int}, service_id={service_id_int}, transaction_param={transaction_param}, amount={amount_formatted}")
             
@@ -727,36 +759,35 @@ class ClickPaymentService:
                 logger.error(f"Correct format: md5(click_trans_id + service_id + SECRET_KEY + merchant_trans_id + amount + action + sign_time)")
                 return {'error': -1, 'error_note': 'Invalid signature'}
             
-            # Find transaction - merchant_trans_id (Click'da transaction_param deb ataladi)
-            # Click'dan kelgan merchant_trans_id bizning transaction.id yoki transaction.merchant_trans_id ga mos kelishi kerak
-            transaction = None
-            try:
-                # Avval UUID sifatida qidirish
-                transaction = Transaction.objects.get(id=merchant_trans_id)
-            except (Transaction.DoesNotExist, ValueError):
-                # UUID emas bo'lsa, merchant_trans_id field orqali qidirish
-                try:
-                    transaction = Transaction.objects.get(merchant_trans_id=merchant_trans_id)
-                except Transaction.DoesNotExist:
-                    # Test to'lov bo'lishi mumkin (merchant_trans_id="test")
-                    logger.warning(f"Transaction not found for merchant_trans_id={merchant_trans_id}. This might be a test payment.")
-                    # Test to'lov uchun ham signature tekshirilishi kerak
-                    # Signature tekshiruvi o'tgan bo'lsa, test to'lov sifatida qabul qilamiz
-                    if sign_string == expected_sign:
-                        logger.info(f"Test payment detected (merchant_trans_id={merchant_trans_id}). Signature verified successfully.")
-                        return {
-                            'click_trans_id': click_trans_id,
-                            'merchant_trans_id': merchant_trans_id,
-                            'merchant_prepare_id': merchant_trans_id,
-                            'error': 0,
-                            'error_note': 'Success (test payment)'
-                        }
-                    else:
-                        return {'error': -5, 'error_note': 'Transaction not found'}
+            # Find transaction - merchant_trans_id = transaction_param (bizning transaction.id)
+            transaction = _find_transaction_by_merchant_trans_id(merchant_trans_id)
+            if not transaction:
+                logger.warning(f"Transaction not found for merchant_trans_id={merchant_trans_id}")
+                if sign_string == expected_sign:
+                    logger.info(f"Test payment (merchant_trans_id={merchant_trans_id}). Signature OK.")
+                    return {
+                        'click_trans_id': click_trans_id,
+                        'merchant_trans_id': str(merchant_trans_id),
+                        'merchant_prepare_id': str(merchant_trans_id),
+                        'error': 0,
+                        'error_note': 'Success (test payment)'
+                    }
+                return {'error': -5, 'error_note': 'Transaction not found'}
             
-            # Check amount - compare as floats to avoid precision issues
-            if abs(float(amount) - float(transaction.amount)) > 0.01:
-                return {'error': -2, 'error_note': f'Invalid amount: expected {transaction.amount}, got {amount}'}
+            # Check amount — Click usually sends soums; sometimes tiyin (1 sum = 100 tiyin). Allow small tolerance.
+            try:
+                click_amount = float(amount)
+            except (TypeError, ValueError):
+                click_amount = 0
+            our_amount = float(transaction.amount)
+            amount_ok = abs(click_amount - our_amount) <= 0.02
+            if not amount_ok and click_amount >= 100 and our_amount > 0:
+                # Try tiyin: Click might send amount * 100
+                if abs((click_amount / 100) - our_amount) <= 0.02:
+                    amount_ok = True
+            if not amount_ok:
+                logger.warning(f"Amount mismatch: Click sent {amount}, we have {transaction.amount}")
+                return {'error': -2, 'error_note': f'Invalid amount: expected {our_amount}, got {amount}'}
             
             # Save Click transaction ID and prepare status
             transaction.click_trans_id = click_trans_id
@@ -801,16 +832,12 @@ class ClickPaymentService:
             sign_time = data.get('sign_time')
             sign_string = data.get('sign_string')
             
-            # Find transaction first to get service_id (if not in request)
-            # Use select_for_update to lock transaction row during update
-            try:
-                transaction = Transaction.objects.select_for_update().get(id=merchant_trans_id)
-            except Transaction.DoesNotExist:
-                # Try to find by merchant_trans_id field
-                try:
-                    transaction = Transaction.objects.select_for_update().get(merchant_trans_id=merchant_trans_id)
-                except Transaction.DoesNotExist:
-                    return {'error': -5, 'error_note': 'Transaction not found'}
+            # Find transaction (same logic as prepare — UUID / merchant_trans_id)
+            transaction = _find_transaction_by_merchant_trans_id(merchant_trans_id)
+            if not transaction:
+                return {'error': -5, 'error_note': 'Transaction not found'}
+            # Lock row for update
+            transaction = Transaction.objects.select_for_update().get(pk=transaction.pk)
             
             # Get service_id from request or transaction (saved during prepare) or use default
             service_id_for_complete = service_id or getattr(transaction, 'click_service_id', None) or self.service_id
@@ -860,19 +887,45 @@ class ClickPaymentService:
                 return {'error': -1, 'error_note': 'Invalid signature'}
             
             # Use atomic transaction to ensure status update is saved consistently
+            # Click may send error as int 0 or string "0"
+            try:
+                error_int = int(error) if error is not None else -1
+            except (TypeError, ValueError):
+                error_int = -1
             with db_transaction.atomic():
-                # Update transaction status based on error code
-                if error == 0:
+                if error_int == 0:
                     transaction.status = 'completed'
                     transaction.completed_at = timezone.now()
                     transaction.click_paydoc_id = data.get('click_paydoc_id', transaction.click_paydoc_id or '')
-                    transaction.click_trans_id = click_trans_id  # Save Click transaction ID
+                    transaction.click_trans_id = click_trans_id
+                    transaction.error_note = ''
                 else:
                     transaction.status = 'failed'
-                
-                transaction.save(update_fields=['status', 'completed_at', 'click_paydoc_id', 'click_trans_id'])
+                    transaction.error_note = str(data.get('error_note', ''))[:500]
+                transaction.save(update_fields=['status', 'completed_at', 'click_paydoc_id', 'click_trans_id', 'error_note'])
                 
                 logger.info(f"Transaction {transaction.id} status updated to '{transaction.status}'")
+            
+            if error_int == 0 and getattr(transaction, 'service_type', None) == 'udk_request':
+                try:
+                    from apps.udc.fulfill import fulfill_udk_request
+                    fulfill_udk_request(transaction)
+                except Exception as e:
+                    logger.error(f"UDK fulfill failed: {e}", exc_info=True)
+
+            if error_int == 0 and getattr(transaction, 'service_type', None) == 'article_sample':
+                try:
+                    from apps.articles.fulfill_sample import fulfill_article_sample
+                    fulfill_article_sample(transaction)
+                except Exception as e:
+                    logger.error(f"Article sample fulfill failed: {e}", exc_info=True)
+
+            if error_int == 0 and getattr(transaction, 'service_type', None) == 'doi_request':
+                try:
+                    from apps.articles.fulfill_doi import fulfill_doi_request
+                    fulfill_doi_request(transaction)
+                except Exception as e:
+                    logger.error(f"DOI request fulfill failed: {e}", exc_info=True)
             
             return {
                 'click_trans_id': click_trans_id,

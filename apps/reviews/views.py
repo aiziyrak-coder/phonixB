@@ -3,6 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
+from django.http import HttpResponse
 from .models import PeerReview
 from .serializers import PeerReviewSerializer
 from apps.notifications.models import Notification
@@ -112,3 +113,40 @@ class PeerReviewViewSet(viewsets.ModelViewSet):
             logger.warning(f"Failed to send admin review notification: {e}")
 
         return Response(PeerReviewSerializer(review).data)
+
+    @action(detail=True, methods=['get'], url_path='review-document')
+    def review_document(self, request, pk=None):
+        """Taqriz natijasini matn fayl sifatida yuklab olish (muallif uchun)."""
+        review = self.get_object()
+        if review.article.author_id != request.user.id and request.user.role not in ('super_admin', 'journal_admin'):
+            return Response({'error': 'Huquq yo\'q.'}, status=status.HTTP_403_FORBIDDEN)
+        lines = [
+            f"Maqola: {review.article.title}",
+            f"Taqrizchi: {review.reviewer.get_full_name() if review.reviewer else ''}",
+            f"Yakunlangan: {review.completed_at.strftime('%Y-%m-%d %H:%M') if review.completed_at else ''}",
+            "",
+            "--- Taqriz matni ---",
+            review.review_content or "(yo'q)",
+            "",
+            "--- Muallifga izohlar ---",
+            review.comments_to_author or "(yo'q)",
+            "",
+            "--- Kuchli tomonlar ---",
+            review.strengths or "(yo'q)",
+            "",
+            "--- Zaif tomonlar ---",
+            review.weaknesses or "(yo'q)",
+            "",
+            "--- Ballar ---",
+            f"Originality: {review.originality_score}, Methodology: {review.methodology_score}",
+            f"Clarity: {review.clarity_score}, Significance: {review.significance_score}, References: {review.references_score}",
+            f"Umumiy: {review.rating}",
+        ]
+        if review.recommendation:
+            rec_display = getattr(review, 'get_recommendation_display', lambda: review.recommendation)()
+            lines.append(f"\nTavsiya: {rec_display}")
+        text = "\n".join(lines)
+        response = HttpResponse(text, content_type='text/plain; charset=utf-8')
+        safe_title = "".join(c for c in (review.article.title or "")[:50] if c.isalnum() or c in " _-").strip() or "maqola"
+        response['Content-Disposition'] = f'attachment; filename="taqriz_{safe_title}_{review.id}.txt"'
+        return response

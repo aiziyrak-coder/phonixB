@@ -40,10 +40,12 @@ class TransactionViewSet(viewsets.ModelViewSet):
         return context
     
     def get_queryset(self):
-        """Filter transactions by user"""
-        if self.request.user.is_superuser:
-            return Transaction.objects.all()
-        return Transaction.objects.filter(user=self.request.user)
+        """Super admin and accountant see all; others see own transactions only."""
+        base = Transaction.objects.select_related('article')
+        role = getattr(self.request.user, 'role', None)
+        if role == 'super_admin' or role == 'accountant' or self.request.user.is_superuser:
+            return base.order_by('-created_at')
+        return base.filter(user=self.request.user).order_by('-created_at')
     
     def perform_create(self, serializer):
         """Set user automatically when creating transaction"""
@@ -219,24 +221,24 @@ def click_prepare_view(request):
         logger.info(f"Content-Type: {request.content_type}")
         logger.info(f"Request body: {request.body[:500] if request.body else 'Empty'}")
         
-        # Click sends data as form data (application/x-www-form-urlencoded) or JSON
+        # Click sends form data or JSON; try all ways to parse
         data = {}
-        if request.content_type and 'application/json' in request.content_type:
+        if request.content_type and 'application/json' in request.content_type and request.body:
             import json
-            if request.body:
-                data = json.loads(request.body.decode('utf-8'))
-                logger.info(f"Parsed JSON data: {data}")
-        else:
-            # Form data (Click typically sends form data)
-            if request.POST:
-                data = request.POST.dict()
-                logger.info(f"Parsed form data: {data}")
-            elif request.body:
-                # Try to parse as form-encoded
-                from urllib.parse import parse_qs
-                parsed = parse_qs(request.body.decode('utf-8'))
-                data = {k: v[0] if len(v) == 1 else v for k, v in parsed.items()}
-                logger.info(f"Parsed form-encoded data: {data}")
+            data = json.loads(request.body.decode('utf-8'))
+            logger.info(f"Parsed JSON data: {data}")
+        if not data and request.POST:
+            data = request.POST.dict()
+            logger.info(f"Parsed form data (POST): {data}")
+        if not data and request.body:
+            from urllib.parse import parse_qs
+            try:
+                body_str = request.body.decode('utf-8')
+            except UnicodeDecodeError:
+                body_str = request.body.decode('latin-1')
+            parsed = parse_qs(body_str)
+            data = {k: (v[0] if len(v) == 1 else v) for k, v in parsed.items()}
+            logger.info(f"Parsed form-encoded from body: {data}")
         
         if not data:
             logger.warning("No data received in Click prepare request")
@@ -273,24 +275,23 @@ def click_complete_view(request):
         logger.info(f"Content-Type: {request.content_type}")
         logger.info(f"Request body: {request.body[:500] if request.body else 'Empty'}")
         
-        # Click sends data as form data (application/x-www-form-urlencoded) or JSON
         data = {}
-        if request.content_type and 'application/json' in request.content_type:
+        if request.content_type and 'application/json' in request.content_type and request.body:
             import json
-            if request.body:
-                data = json.loads(request.body.decode('utf-8'))
-                logger.info(f"Parsed JSON data: {data}")
-        else:
-            # Form data (Click typically sends form data)
-            if request.POST:
-                data = request.POST.dict()
-                logger.info(f"Parsed form data: {data}")
-            elif request.body:
-                # Try to parse as form-encoded
-                from urllib.parse import parse_qs
-                parsed = parse_qs(request.body.decode('utf-8'))
-                data = {k: v[0] if len(v) == 1 else v for k, v in parsed.items()}
-                logger.info(f"Parsed form-encoded data: {data}")
+            data = json.loads(request.body.decode('utf-8'))
+            logger.info(f"Parsed JSON data: {data}")
+        if not data and request.POST:
+            data = request.POST.dict()
+            logger.info(f"Parsed form data (POST): {data}")
+        if not data and request.body:
+            from urllib.parse import parse_qs
+            try:
+                body_str = request.body.decode('utf-8')
+            except UnicodeDecodeError:
+                body_str = request.body.decode('latin-1')
+            parsed = parse_qs(body_str)
+            data = {k: (v[0] if len(v) == 1 else v) for k, v in parsed.items()}
+            logger.info(f"Parsed form-encoded from body: {data}")
         
         if not data:
             logger.warning("No data received in Click complete request")

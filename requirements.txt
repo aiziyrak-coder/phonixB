@@ -17,9 +17,14 @@ python-dotenv>=1.0.0,<2.0.0
 # Pillow>=10.3.0
 django-cleanup>=8.0.0,<9.0.0
 
-# PDF processing for plagiarism check
+# PDF processing for plagiarism check and UDK certificate
 PyPDF2>=3.0.0,<4.0.0
 pdfplumber>=0.10.0,<1.0.0
+reportlab>=4.0.0,<5.0.0
+qrcode[pil]>=7.0,<8.0
+
+# Word documents (UDK standalone: doc, docx)
+docx2txt>=0.8,<1.0.0
 
 # API integrations
 requests>=2.31.0,<3.0.0

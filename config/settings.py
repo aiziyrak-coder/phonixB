@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'apps.translations',
     'apps.reviews',
     'apps.notifications',
+    'apps.udc',
 ]
 
 MIDDLEWARE = [
@@ -220,6 +221,10 @@ else:
     logger.warning(f"CORS_ALLOW_ALL_ORIGINS is True! This should be False in production. ENV_VALUE={cors_allow_all_env}")
 
 CORS_ALLOW_CREDENTIALS = True
+
+# Frontend base URL (for Click return_url after payment)
+FRONTEND_BASE_URL = os.getenv('FRONTEND_BASE_URL', 'http://localhost:3000').rstrip('/')
+
 CORS_ALLOW_METHODS = ['DELETE', 'GET', 'OPTIONS', 'PATCH', 'POST', 'PUT']
 CORS_ALLOW_HEADERS = [
     'accept',
@@ -250,7 +255,10 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
 
 # Gemini AI Settings
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', 'AIzaSyBvdPzXpZyjqydWisq4_tM4pxMIQM3NAxE')
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', 'AIzaSyAsGc7uVmP3Ff_asxfEy_ys-J1K9_6pDYQ')
+
+# UDK: to'lovni vaqtincha o'chirish (False = bepul, darhol bajariladi; True = to'lov kerak)
+UDK_PAYMENT_ENABLED = os.getenv('UDK_PAYMENT_ENABLED', 'false').lower() in ('true', '1', 'yes')
 
 # Click Payment Settings
 # PHOENIX service credentials (new integration from 2025-12-18)

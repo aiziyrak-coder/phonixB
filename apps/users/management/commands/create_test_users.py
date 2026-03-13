@@ -3,7 +3,7 @@ from apps.users.models import User
 
 
 class Command(BaseCommand):
-    help = 'Barcha userlarni o\'chirib, har bir rol uchun 1ta demo user yaratish'
+    help = "Barcha userlarni o'chirib, 5 ta demo user yaratish. Eslatma: BARCHA userlar o'chiriladi. Production uchun parollarni yangilash: python manage.py setup_demo_and_admin"
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -17,7 +17,7 @@ class Command(BaseCommand):
         total_deleted = User.objects.count()
         User.objects.all().delete()
         self.stdout.write(
-            self.style.WARNING(f'🗑️  {total_deleted} ta user o\'chirildi.')
+            self.style.WARNING(f'{total_deleted} ta user o\'chirildi.')
         )
 
         # 2. Har bir rol uchun 1ta demo user
@@ -114,7 +114,7 @@ class Command(BaseCommand):
 
                 self.stdout.write(
                     self.style.SUCCESS(
-                        f'✅ {user.role:15s} | {phone} | {password} | {email}'
+                        f'[OK] {user.role:15s} | {phone} | {password} | {email}'
                     )
                 )
                 # Put password back for summary
@@ -122,15 +122,15 @@ class Command(BaseCommand):
 
             except Exception as e:
                 self.stdout.write(
-                    self.style.ERROR(f'❌ Xatolik: {email} - {str(e)}')
+                    self.style.ERROR(f'Xatolik: {email} - {str(e)}')
                 )
                 user_data['password'] = password
 
         self.stdout.write('\n' + '=' * 70)
-        self.stdout.write(self.style.SUCCESS(f'✅ Jami {created_count} ta demo user yaratildi.'))
+        self.stdout.write(self.style.SUCCESS(f'Jami {created_count} ta demo user yaratildi.'))
         self.stdout.write('=' * 70)
 
-        self.stdout.write('\n🔐 DEMO LOGIN MA\'LUMOTLARI:\n')
+        self.stdout.write('\nDEMO LOGIN MA\'LUMOTLARI:\n')
         self.stdout.write(f'{"Rol":<17} {"Telefon":<15} {"Parol":<17} {"Email"}')
         self.stdout.write('-' * 70)
         for u in demo_users:
