@@ -10,6 +10,9 @@ dj-database-url>=2.1.0,<3.0.0
 # CORS
 django-cors-headers>=4.3.0,<5.0.0
 
+# Filtering (DRF)
+django-filter>=24.0,<25.0
+
 # Environment variables
 python-dotenv>=1.0.0,<2.0.0
 
