@@ -11,10 +11,11 @@ echo "[1/6] Backend: git pull..."
 cd "${DEPLOY_DIR}/backend"
 git pull origin master || git pull origin main
 
-echo "[2/6] Backend: migrate..."
+echo "[2/6] Backend: migrate va narxlar..."
 source venv/bin/activate
 pip install -r requirements.txt gunicorn -q
 python manage.py migrate --noinput
+python manage.py seed_service_prices 2>/dev/null || true
 python manage.py collectstatic --noinput 2>/dev/null || true
 deactivate
 

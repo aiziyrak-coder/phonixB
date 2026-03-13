@@ -246,6 +246,27 @@ class PaymeService:
         transaction.completed_at = timezone.now()
         transaction.save()
         
+        # Fulfill xizmat (Click handle_complete dagi kabi)
+        service_type = getattr(transaction, 'service_type', None)
+        if service_type == 'udk_request':
+            try:
+                from apps.udc.fulfill import fulfill_udk_request
+                fulfill_udk_request(transaction)
+            except Exception as e:
+                logger.error(f"Payme: UDK fulfill failed: {e}", exc_info=True)
+        elif service_type == 'article_sample':
+            try:
+                from apps.articles.fulfill_sample import fulfill_article_sample
+                fulfill_article_sample(transaction)
+            except Exception as e:
+                logger.error(f"Payme: Article sample fulfill failed: {e}", exc_info=True)
+        elif service_type == 'doi_request':
+            try:
+                from apps.articles.fulfill_doi import fulfill_doi_request
+                fulfill_doi_request(transaction)
+            except Exception as e:
+                logger.error(f"Payme: DOI fulfill failed: {e}", exc_info=True)
+        
         logger.info(f"Payme transaction performed: {payme_trans_id} for {transaction.id}")
         
         return {
