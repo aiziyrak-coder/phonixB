@@ -28,14 +28,21 @@ Quyidagi 3 ta ma'lumotni yozib oling:
 ssh root@your-server-ip
 ```
 
-### 2. Payme Credentials Kiritish
+### 2. Server'da .env — Kalitlar (Payme, Gemini va boshqalar)
 
 ```bash
 cd /phonix/backend
 nano .env
 ```
 
-**Fayldagi eng oxiriga qo'shing:**
+**⚠️ Xavfsizlik:** Barcha maxfiy kalitlarni faqat serverdagi `.env` da saqlang. `.env` GitHubga yuklanmaydi.
+
+**Gemini API (PDF/UDK/antiplagiat uchun) — faylga qo'shing:**
+```env
+GEMINI_API_KEY=AIzaSy...sizning_kalitingiz
+```
+
+**Fayldagi eng oxiriga Payme qo'shing:**
 
 ```env
 # Payme Payment (Sizning ma'lumotlaringizni kiriting!)

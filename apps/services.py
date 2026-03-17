@@ -151,10 +151,31 @@ class GeminiService:
             logger.error(f"Error transliterating text: {e}", exc_info=True)
             return text
     
-    def extract_text_from_pdf(self, file_path):
-        """Extract text content from PDF file"""
+    def extract_text_from_document(self, file_path):
+        """Extract text content from PDF, DOCX, DOC, or TXT files"""
         try:
             import os
+            ext = os.path.splitext(file_path)[1].lower()
+            
+            # Handle DOCX files
+            if ext == '.docx':
+                try:
+                    import docx2txt
+                    text = docx2txt.process(file_path)
+                    return text.strip() if text else ""
+                except ImportError:
+                    logger.warning("docx2txt not installed, trying basic extraction for DOCX")
+            
+            # Handle TXT files
+            elif ext == '.txt':
+                try:
+                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as file:
+                        return file.read().strip()
+                except Exception as e:
+                    logger.error(f"Error reading TXT file {file_path}: {e}")
+                    return ""
+                    
+            # Handle PDF files (or default fallback)
             # Try PyPDF2 first
             try:
                 import PyPDF2
@@ -162,30 +183,39 @@ class GeminiService:
                     pdf_reader = PyPDF2.PdfReader(file)
                     text = ""
                     for page in pdf_reader.pages:
-                        text += page.extract_text() + "\n"
+                        page_text = page.extract_text()
+                        if page_text:
+                            text += page_text + "\n"
+                    if text.strip():
+                        return text.strip()
+            except Exception as e:
+                logger.debug(f"PyPDF2 extraction failed or not installed: {e}")
+            
+            # Fallback to pdfplumber
+            try:
+                import pdfplumber
+                text = ""
+                with pdfplumber.open(file_path) as pdf:
+                    for page in pdf.pages:
+                        page_text = page.extract_text()
+                        if page_text:
+                            text += page_text + "\n"
+                if text.strip():
                     return text.strip()
             except ImportError:
-                # Fallback to pdfplumber
-                try:
-                    import pdfplumber
-                    text = ""
-                    with pdfplumber.open(file_path) as pdf:
-                        for page in pdf.pages:
-                            page_text = page.extract_text()
-                            if page_text:
-                                text += page_text + "\n"
-                    return text.strip()
-                except ImportError:
-                    # Final fallback: try basic text extraction
-                    logger.warning("PyPDF2 and pdfplumber not installed, using basic extraction")
-                    # Try to read as text file (for some PDFs)
-                    try:
-                        with open(file_path, 'r', encoding='utf-8', errors='ignore') as file:
-                            return file.read()
-                    except:
-                        return ""
+                logger.debug("pdfplumber not installed")
+            except Exception as e:
+                logger.debug(f"pdfplumber extraction failed: {e}")
+                
+            # Final fallback: try basic text extraction (can work for some raw PDFs or text files)
+            try:
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as file:
+                    return file.read().strip()
+            except:
+                return ""
+                
         except Exception as e:
-            logger.error(f"Error extracting text from PDF {file_path}: {e}", exc_info=True)
+            logger.error(f"Error extracting text from document {file_path}: {e}", exc_info=True)
             return ""
     
     def count_words_in_document(self, file_content):

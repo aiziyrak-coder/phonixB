@@ -254,8 +254,8 @@ CORS_EXPOSE_HEADERS = ['Content-Type', 'X-CSRFToken']  # Exposed headers
 FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
 
-# Gemini AI Settings
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', 'AIzaSyAsGc7uVmP3Ff_asxfEy_ys-J1K9_6pDYQ')
+# Gemini AI — faqat serverda .env da o'rnating (GitHubga yozmang)
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 
 # UDK: to'lovni vaqtincha o'chirish (False = bepul, darhol bajariladi; True = to'lov kerak)
 UDK_PAYMENT_ENABLED = os.getenv('UDK_PAYMENT_ENABLED', 'false').lower() in ('true', '1', 'yes')

@@ -485,9 +485,8 @@ class ArticleViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_402_PAYMENT_REQUIRED
             )
         
-        # Check if file exists
         if not article.final_pdf_path:
-            logger.warning(f"[CHECK_PLAGE] No PDF file for article {article.id}")
+            logger.warning(f"[CHECK_PLAGE] No document file for article {article.id}")
             return Response(
                 {'error': 'Plagiat tekshiruvi uchun maqola fayli kerak'},
                 status=status.HTTP_400_BAD_REQUEST
@@ -498,7 +497,7 @@ class ArticleViewSet(viewsets.ModelViewSet):
             gemini_service = get_gemini_service()
             logger.info(f"[CHECK_PLAGE] Gemini service initialized")
             
-            # Extract content from PDF file
+            # Extract content from document file
             text_content = ""
             if article.final_pdf_path:
                 try:
@@ -509,29 +508,29 @@ class ArticleViewSet(viewsets.ModelViewSet):
                     file_path = os.path.join(settings.MEDIA_ROOT, str(article.final_pdf_path))
                     logger.info(f"[CHECK_PLAGE] Checking file at: {file_path}")
                     
-                    # Extract text from PDF
+                    # Extract text from document
                     if os.path.exists(file_path):
-                        text_content = gemini_service.extract_text_from_pdf(file_path)
-                        logger.info(f"[CHECK_PLAGE] Extracted {len(text_content)} chars from PDF")
+                        text_content = gemini_service.extract_text_from_document(file_path)
+                        logger.info(f"[CHECK_PLAGE] Extracted {len(text_content)} chars from document")
                     else:
                         # Try alternative path
                         if hasattr(article, 'main_file') and article.main_file:
                             file_path = article.main_file.path
                             if os.path.exists(file_path):
-                                text_content = gemini_service.extract_text_from_pdf(file_path)
+                                text_content = gemini_service.extract_text_from_document(file_path)
                                 logger.info(f"[CHECK_PLAGE] Extracted {len(text_content)} chars from alternative file")
                         
                         if not text_content:
-                            logger.warning(f"[CHECK_PLAGE] PDF file not found at {file_path}, using article abstract")
+                            logger.warning(f"[CHECK_PLAGE] Document file not found at {file_path}, using article abstract")
                             text_content = article.abstract or article.title or ""
                 except Exception as e:
-                    logger.error(f"[CHECK_PLAGE] Error extracting PDF content: {e}", exc_info=True)
+                    logger.error(f"[CHECK_PLAGE] Error extracting document content: {e}", exc_info=True)
                     # Fallback to article text
                     text_content = article.abstract or article.title or ""
             else:
                 # Use article text as fallback
                 text_content = article.abstract or article.title or ""
-            
+                
             logger.info(f"[CHECK_PLAGE] Final text length: {len(text_content) if text_content else 0}")
             
             # Perform plagiarism check
