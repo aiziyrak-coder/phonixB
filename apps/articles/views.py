@@ -591,8 +591,8 @@ class ArticleViewSet(viewsets.ModelViewSet):
                 'sources': result.get('sources', report.get('sources', [])),
             })
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
+            # Do not reassign `logger` here — it shadows the module logger and causes
+            # UnboundLocalError on the first logger.* call in this function.
             logger.error(f"[CHECK_PLAGE] Error checking plagiarism: {str(e)}", exc_info=True)
             return Response(
                 {'error': 'Plagiat tekshiruvida xatolik yuz berdi. Iltimos, qayta urinib ko\'ring.', 'details': str(e)},
