@@ -30,6 +30,8 @@ class ArticleListSerializer(serializers.ModelSerializer):
     """Minimal serializer for list action only — avoids nested/expensive fields that can cause 500."""
     author_name = serializers.SerializerMethodField()
     journal_name = serializers.SerializerMethodField()
+    publication_link = serializers.SerializerMethodField()
+    certificate_download_link = serializers.SerializerMethodField()
 
     class Meta:
         model = Article
@@ -38,6 +40,7 @@ class ArticleListSerializer(serializers.ModelSerializer):
             'author_name', 'journal_name', 'doi', 'submission_date', 'views_count',
             'downloads_count', 'citations_count', 'page_count', 'fast_track',
             'plagiarism_percentage', 'ai_content_percentage', 'originality_percentage', 'plagiarism_checked_at',
+            'publication_url', 'publication_link', 'certificate_download_link',
         )
 
     def get_author_name(self, obj):
@@ -55,6 +58,31 @@ class ArticleListSerializer(serializers.ModelSerializer):
             return getattr(obj.journal, 'name', '') or ''
         except Exception:
             return ''
+
+    def _build_absolute_url_list(self, value):
+        if not value:
+            return ''
+        value_str = str(value)
+        if value_str.startswith('http://') or value_str.startswith('https://'):
+            return value_str
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(value_str)
+        return value_str
+
+    def get_publication_link(self, obj):
+        if not getattr(obj, 'publication_url', None):
+            return ''
+        return self._build_absolute_url_list(obj.publication_url)
+
+    def get_certificate_download_link(self, obj):
+        if getattr(obj, 'publication_certificate_path', None) and obj.publication_certificate_path:
+            return self._build_absolute_url_list(obj.publication_certificate_path.url)
+        if getattr(obj, 'publication_certificate_url', None) and obj.publication_certificate_url:
+            return self._build_absolute_url_list(obj.publication_certificate_url)
+        if getattr(obj, 'certificate_url', None) and obj.certificate_url:
+            return self._build_absolute_url_list(obj.certificate_url)
+        return ''
 
 
 class ArticleSerializer(serializers.ModelSerializer):

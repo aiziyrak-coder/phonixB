@@ -19,9 +19,14 @@ class TranslationRequestViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        if self.request.user.role in ['super_admin', 'reviewer']:
-            return TranslationRequest.objects.all()
-        return TranslationRequest.objects.filter(author=self.request.user)
+        role = getattr(self.request.user, 'role', None) if self.request.user.is_authenticated else None
+        if isinstance(role, str):
+            role = role.strip().lower()
+        if role in ('super_admin', 'reviewer'):
+            return TranslationRequest.objects.select_related('author', 'reviewer').all()
+        return TranslationRequest.objects.select_related('author', 'reviewer').filter(
+            author=self.request.user
+        )
     
     def perform_create(self, serializer):
         serializer.save(author=self.request.user)

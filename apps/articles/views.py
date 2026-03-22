@@ -389,9 +389,12 @@ class ArticleViewSet(viewsets.ModelViewSet):
         Expects multipart: certificate (file, PDF or JPG), optional issue_id.
         """
         article = self.get_object()
-        if request.user.role == 'super_admin':
+        role_cp = getattr(request.user, 'role', None) or ''
+        if isinstance(role_cp, str):
+            role_cp = role_cp.strip().lower()
+        if role_cp == 'super_admin':
             pass
-        elif request.user.role == 'journal_admin':
+        elif role_cp == 'journal_admin':
             if article.journal.journal_admin_id != request.user.id:
                 return Response(
                     {'error': 'Siz faqat o\'z jurnalingizdagi maqolalarni nashr qilishingiz mumkin'},
@@ -463,6 +466,91 @@ class ArticleViewSet(viewsets.ModelViewSet):
             'status': 'success',
             'new_status': 'Published',
             'message': 'Nashr qilindi. Muallifga bildirishnoma yuborildi.',
+        })
+
+    @action(detail=True, methods=['post'])
+    def send_publication_delivery(self, request, pk=None):
+        """
+        Nashr etilgan maqola: nashr havolasi va/yoki sertifikat faylini yangilash, muallifga bildirishnoma.
+        Faqat super_admin yoki o'sha jurnalning journal_admin'i.
+        Kamida bittasi kerak: publication_url yoki certificate fayli.
+        """
+        article = self.get_object()
+        role = getattr(request.user, 'role', None) or ''
+        if isinstance(role, str):
+            role = role.strip().lower()
+        if role == 'super_admin':
+            pass
+        elif role == 'journal_admin':
+            if article.journal.journal_admin_id != request.user.id:
+                return Response(
+                    {'error': 'Siz faqat o\'z jurnalingizdagi maqolalarni boshqarishingiz mumkin'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        else:
+            return Response(
+                {'error': 'Sizda bu amalni bajarish huquqi yo\'q'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        if article.status != 'Published':
+            return Response(
+                {'error': 'Faqat "Nashr etilgan" holatidagi maqolalar uchun'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        publication_url = (request.data.get('publication_url') or request.POST.get('publication_url') or '').strip()
+        certificate_file = request.FILES.get('certificate')
+        if not publication_url and not certificate_file:
+            return Response(
+                {'error': 'Kamida bittasi kerak: nashr havolasi (URL) yoki sertifikat fayli'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if certificate_file:
+            allowed_content_types = (
+                'application/pdf',
+                'image/jpeg',
+                'image/jpg',
+                'image/png',
+            )
+            if certificate_file.content_type not in allowed_content_types:
+                return Response(
+                    {'error': 'Sertifikat faqat PDF yoki JPG (PNG) formatida bo\'lishi kerak'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            article.publication_certificate_path = certificate_file
+        if publication_url:
+            article.publication_url = publication_url[:500]
+        article.save()
+        if certificate_file and article.publication_certificate_path:
+            try:
+                article.publication_certificate_url = article.publication_certificate_path.url
+                article.save(update_fields=['publication_certificate_url'])
+            except Exception as e:
+                logger.warning('send_publication_delivery certificate URL sync failed: %s', e)
+        ActivityLog.objects.create(
+            article=article,
+            user=request.user,
+            action='Nashr havolasi/sertifikat yangilandi',
+            details='Muallifga bildirishnoma yuborildi.',
+        )
+        try:
+            Notification.notify(
+                user=article.author,
+                title='Maqolangiz bo\'yicha yangilanish',
+                message=(
+                    f'"{article.title}" maqolangiz uchun nashr havolasi yoki sertifikat yangilandi. '
+                    f'Maqola sahifasidan ko\'ring.'
+                ),
+                notification_type='article',
+                link=f'/articles/{article.id}',
+                metadata={'article_id': str(article.id), 'status': 'Published'},
+            )
+        except Exception as e:
+            logger.warning('send_publication_delivery notify failed: %s', e)
+        serializer = ArticleSerializer(article, context={'request': request})
+        return Response({
+            'status': 'success',
+            'message': 'Saqlandi. Muallifga bildirishnoma yuborildi.',
+            'article': serializer.data,
         })
 
     @action(detail=True, methods=['post'])

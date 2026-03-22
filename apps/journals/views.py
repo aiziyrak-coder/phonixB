@@ -33,6 +33,8 @@ class JournalViewSet(viewsets.ModelViewSet):
             'issues'
         )
         role = getattr(self.request.user, 'role', None) if self.request.user.is_authenticated else None
+        if isinstance(role, str):
+            role = role.strip().lower()
         if role == 'journal_admin':
             return base.filter(journal_admin=self.request.user)
         return base.all()
@@ -75,6 +77,8 @@ class IssueViewSet(viewsets.ModelViewSet):
         # Optimize queries. Journal admin sees only issues of their assigned journals.
         base = Issue.objects.select_related('journal', 'journal__journal_admin').prefetch_related('articles')
         role = getattr(self.request.user, 'role', None) if self.request.user.is_authenticated else None
+        if isinstance(role, str):
+            role = role.strip().lower()
         if role == 'journal_admin':
             return base.filter(journal__journal_admin=self.request.user)
         return base.all()
