@@ -25,6 +25,108 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _extract_docx_text_via_zip(file_path: str) -> str:
+    """DOCX is a ZIP of XML; read word/document.xml without treating the whole file as plain text."""
+    import zipfile
+    from xml.etree import ElementTree as ET
+
+    try:
+        with zipfile.ZipFile(file_path, 'r') as zf:
+            names = zf.namelist()
+            doc_xml = 'word/document.xml'
+            if doc_xml not in names:
+                return ''
+            data = zf.read(doc_xml)
+        root = ET.fromstring(data)
+        parts = []
+        for el in root.iter():
+            tag = el.tag.split('}')[-1] if '}' in el.tag else el.tag
+            if tag == 't' and el.text:
+                parts.append(el.text)
+            elif tag == 'tab':
+                parts.append(' ')
+        text = ' '.join(parts)
+        return ' '.join(text.split())
+    except Exception as e:
+        logger.debug(f'DOCX zip/XML extraction failed: {e}')
+        return ''
+
+
+def extract_plain_text_from_file(file_path: str) -> str:
+    """
+    Extract readable text for word counting / analysis. No Gemini client — safe for translation pricing.
+    DOCX: docx2txt, then ZIP+document.xml fallback (never read .docx as raw UTF-8).
+    """
+    import os
+
+    try:
+        ext = os.path.splitext(file_path)[1].lower()
+
+        if ext == '.docx':
+            try:
+                import docx2txt
+                text = docx2txt.process(file_path)
+                if text and text.strip():
+                    return text.strip()
+            except ImportError:
+                logger.warning('docx2txt not installed; using ZIP fallback for DOCX')
+            except Exception as e:
+                logger.warning(f'docx2txt failed for {file_path}: {e}')
+            zip_text = _extract_docx_text_via_zip(file_path)
+            return zip_text.strip() if zip_text else ''
+
+        if ext == '.txt':
+            try:
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    return f.read().strip()
+            except Exception as e:
+                logger.error(f'Error reading TXT {file_path}: {e}')
+                return ''
+
+        # PDF
+        try:
+            import PyPDF2
+            with open(file_path, 'rb') as file:
+                pdf_reader = PyPDF2.PdfReader(file)
+                text = ''
+                for page in pdf_reader.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text += page_text + '\n'
+                if text.strip():
+                    return text.strip()
+        except Exception as e:
+            logger.debug(f'PyPDF2 extraction failed: {e}')
+
+        try:
+            import pdfplumber
+            text = ''
+            with pdfplumber.open(file_path) as pdf:
+                for page in pdf.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text += page_text + '\n'
+            if text.strip():
+                return text.strip()
+        except ImportError:
+            logger.debug('pdfplumber not installed')
+        except Exception as e:
+            logger.debug(f'pdfplumber failed: {e}')
+
+        if ext in ('.doc',):
+            return ''
+
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                return f.read().strip()
+        except Exception:
+            return ''
+
+    except Exception as e:
+        logger.error(f'extract_plain_text_from_file failed for {file_path}: {e}', exc_info=True)
+        return ''
+
+
 class GeminiService:
     """Service for Gemini AI integration"""
     
@@ -153,70 +255,11 @@ class GeminiService:
     
     def extract_text_from_document(self, file_path):
         """Extract text content from PDF, DOCX, DOC, or TXT files"""
-        try:
-            import os
-            ext = os.path.splitext(file_path)[1].lower()
-            
-            # Handle DOCX files
-            if ext == '.docx':
-                try:
-                    import docx2txt
-                    text = docx2txt.process(file_path)
-                    return text.strip() if text else ""
-                except ImportError:
-                    logger.warning("docx2txt not installed, trying basic extraction for DOCX")
-            
-            # Handle TXT files
-            elif ext == '.txt':
-                try:
-                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as file:
-                        return file.read().strip()
-                except Exception as e:
-                    logger.error(f"Error reading TXT file {file_path}: {e}")
-                    return ""
-                    
-            # Handle PDF files (or default fallback)
-            # Try PyPDF2 first
-            try:
-                import PyPDF2
-                with open(file_path, 'rb') as file:
-                    pdf_reader = PyPDF2.PdfReader(file)
-                    text = ""
-                    for page in pdf_reader.pages:
-                        page_text = page.extract_text()
-                        if page_text:
-                            text += page_text + "\n"
-                    if text.strip():
-                        return text.strip()
-            except Exception as e:
-                logger.debug(f"PyPDF2 extraction failed or not installed: {e}")
-            
-            # Fallback to pdfplumber
-            try:
-                import pdfplumber
-                text = ""
-                with pdfplumber.open(file_path) as pdf:
-                    for page in pdf.pages:
-                        page_text = page.extract_text()
-                        if page_text:
-                            text += page_text + "\n"
-                if text.strip():
-                    return text.strip()
-            except ImportError:
-                logger.debug("pdfplumber not installed")
-            except Exception as e:
-                logger.debug(f"pdfplumber extraction failed: {e}")
-                
-            # Final fallback: try basic text extraction (can work for some raw PDFs or text files)
-            try:
-                with open(file_path, 'r', encoding='utf-8', errors='ignore') as file:
-                    return file.read().strip()
-            except:
-                return ""
-                
-        except Exception as e:
-            logger.error(f"Error extracting text from document {file_path}: {e}", exc_info=True)
-            return ""
+        return extract_plain_text_from_file(file_path)
+
+    def extract_text_from_pdf(self, file_path):
+        """Backward-compatible name: PDF/DOCX/TXT — bitta ajratuvchi."""
+        return extract_plain_text_from_file(file_path)
     
     def count_words_in_document(self, file_content):
         """Estimate word count from document content"""

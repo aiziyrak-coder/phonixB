@@ -266,6 +266,12 @@ class PaymeService:
                 fulfill_doi_request(transaction)
             except Exception as e:
                 logger.error(f"Payme: DOI fulfill failed: {e}", exc_info=True)
+        elif service_type == 'language_editing':
+            try:
+                from apps.articles.fulfill_plagiarism_payment import fulfill_language_editing_payment
+                fulfill_language_editing_payment(transaction)
+            except Exception as e:
+                logger.error(f"Payme: antiplagiat/language_editing fulfill failed: {e}", exc_info=True)
         
         logger.info(f"Payme transaction performed: {payme_trans_id} for {transaction.id}")
         

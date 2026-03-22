@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from datetime import timedelta
 from dotenv import load_dotenv
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -18,11 +19,17 @@ else:
     # Try to load from parent directory if .env is not in backend root
     load_dotenv(BASE_DIR.parent / '.env')
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-z#%kwd+0v#i-7w-7be6!c4=u!6#$259mwd&^dpl2&acoueb3+(')
-
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
+
+# SECURITY WARNING: keep the secret key used in production secret! Never commit real keys.
+_secret = (os.getenv('SECRET_KEY') or '').strip()
+if _secret:
+    SECRET_KEY = _secret
+elif DEBUG:
+    SECRET_KEY = 'django-insecure-dev-only-not-for-production'
+else:
+    raise ImproperlyConfigured('SECRET_KEY must be set in the environment when DEBUG=False')
 
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'api.ilmiyfaoliyat.uz,167.71.53.238,localhost,127.0.0.1').split(',')
 
@@ -38,6 +45,7 @@ INSTALLED_APPS = [
     # Third party apps
     'rest_framework',
     'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     # 'django_cleanup',  # Uncomment after installing: pip install django-cleanup
     
@@ -260,24 +268,18 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 # UDK: to'lovni vaqtincha o'chirish (False = bepul, darhol bajariladi; True = to'lov kerak)
 UDK_PAYMENT_ENABLED = os.getenv('UDK_PAYMENT_ENABLED', 'false').lower() in ('true', '1', 'yes')
 
-# Click Payment Settings
-# PHOENIX service credentials (new integration from 2025-12-18)
+# Click Payment Settings — maxfiy kalitlar faqat .env (Gitga yozilmaydi)
 CLICK_MERCHANT_ID = os.getenv('CLICK_MERCHANT_ID', '45730')
-CLICK_SERVICE_ID = os.getenv('CLICK_SERVICE_ID', '82154')  # Default: Service 82154 (barcha to'lovlar shu service orqali)
-CLICK_SECRET_KEY = os.getenv('CLICK_SECRET_KEY', 'XZC6u3JBBh')  # Service 82154 secret key
-CLICK_MERCHANT_USER_ID = os.getenv('CLICK_MERCHANT_USER_ID', '63536')  # Service 82154 merchant user id
+CLICK_SERVICE_ID = os.getenv('CLICK_SERVICE_ID', '82154')
+CLICK_SECRET_KEY = (os.getenv('CLICK_SECRET_KEY') or '').strip()
+CLICK_MERCHANT_USER_ID = os.getenv('CLICK_MERCHANT_USER_ID', '63536')
 
-# Click Service-specific secret keys (Click'dan kelgan service_id ga mos)
-# Service 82154 uchun (Ilmiyfaoliyat.uz - Click bergan kalitlar)
-CLICK_SERVICE_82154_SECRET_KEY = os.getenv('CLICK_SERVICE_82154_SECRET_KEY', 'XZC6u3JBBh')
+CLICK_SERVICE_82154_SECRET_KEY = (os.getenv('CLICK_SERVICE_82154_SECRET_KEY') or '').strip()
 CLICK_SERVICE_82154_MERCHANT_USER_ID = os.getenv('CLICK_SERVICE_82154_MERCHANT_USER_ID', '63536')
-# Service 82155 uchun (Phoenix publication - Click bergan kalitlar)
-CLICK_SERVICE_82155_SECRET_KEY = os.getenv('CLICK_SERVICE_82155_SECRET_KEY', 'icHbYQnMBx')
+CLICK_SERVICE_82155_SECRET_KEY = (os.getenv('CLICK_SERVICE_82155_SECRET_KEY') or '').strip()
 CLICK_SERVICE_82155_MERCHANT_USER_ID = os.getenv('CLICK_SERVICE_82155_MERCHANT_USER_ID', '64985')
-# Service 89248 uchun (yangi PHOENIX service) - Click'dan olgan to'g'ri kalit
-CLICK_SERVICE_89248_SECRET_KEY = os.getenv('CLICK_SERVICE_89248_SECRET_KEY', '08ClKUoBemAxyM')
-# Service 88045 uchun (PHOENIX - yangi service)
-CLICK_SERVICE_88045_SECRET_KEY = os.getenv('CLICK_SERVICE_88045_SECRET_KEY', 'EcyUxjPNLqxxZo')
+CLICK_SERVICE_89248_SECRET_KEY = (os.getenv('CLICK_SERVICE_89248_SECRET_KEY') or '').strip()
+CLICK_SERVICE_88045_SECRET_KEY = (os.getenv('CLICK_SERVICE_88045_SECRET_KEY') or '').strip()
 
 # Payme Payment Settings
 PAYME_MERCHANT_ID = os.getenv('PAYME_MERCHANT_ID', '')
@@ -331,3 +333,27 @@ LOGGING = {
 
 # Create logs directory if it doesn't exist
 os.makedirs(BASE_DIR / 'logs', exist_ok=True)
+
+# --- Production HTTPS / cookie hardening (nginx TLS orqali) ---
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', 'True').lower() in ('true', '1', 'yes', 'on')
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_HSTS_SECONDS = int(os.getenv('SECURE_HSTS_SECONDS', '31536000'))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = os.getenv('SECURE_HSTS_INCLUDE_SUBDOMAINS', 'True').lower() in ('true', '1', 'yes')
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = 'DENY'
+
+if not DEBUG and not CLICK_SECRET_KEY and not any(
+    (
+        CLICK_SERVICE_82154_SECRET_KEY,
+        CLICK_SERVICE_82155_SECRET_KEY,
+        CLICK_SERVICE_89248_SECRET_KEY,
+        CLICK_SERVICE_88045_SECRET_KEY,
+    )
+):
+    logger.warning(
+        'Click secret keys are empty — tolovlar ishlamasligi mumkin. .env da CLICK_SECRET_KEY yoki '
+        'CLICK_SERVICE_*_SECRET_KEY ni Click merchant kabinetidan kiriting.'
+    )

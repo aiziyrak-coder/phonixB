@@ -8,7 +8,7 @@ from apps.notifications.models import Notification
 from apps.payments.models import Transaction
 from apps.journals.models import Journal
 from django.utils import timezone
-from apps.services import get_gemini_service
+from apps.services import get_gemini_service, extract_plain_text_from_file
 import logging
 import os
 
@@ -87,6 +87,9 @@ class ArticleViewSet(viewsets.ModelViewSet):
             return base_queryset.filter(journal__journal_admin=self.request.user)
         elif role == 'author':
             return base_queryset.filter(author=self.request.user)
+        elif role == 'reviewer':
+            # Taqrizchi: taqriz bosqichidagi maqolalar (frontend ham shu statusni filtrlaydi)
+            return base_queryset.filter(status='QabulQilingan')
         return Article.objects.none()
     
     def get_serializer_class(self):
@@ -101,13 +104,22 @@ class ArticleViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         journal_id = serializer.validated_data.get('journal')
+        title_val = (serializer.validated_data.get('title') or '').strip()
+        kw_list = serializer.validated_data.get('keywords') or []
+        is_antiplagiat_flow = (
+            title_val.lower().startswith('plagiarism check')
+            or any(str(k).lower() == 'plagiarism' for k in kw_list)
+        )
         if journal_id:
             try:
                 journal = Journal.objects.get(pk=journal_id)
                 has_fee = (journal.publication_fee and float(journal.publication_fee) > 0) or (
                     journal.price_per_page and float(journal.price_per_page) > 0
                 )
-                if journal.payment_model == 'pre-payment' and has_fee:
+                # Mustaqil antiplagiat: to'lov alohida (language_editing); jurnal nashr oldindan to'lovini talab qilmaymiz
+                if is_antiplagiat_flow:
+                    pass
+                elif journal.payment_model == 'pre-payment' and has_fee:
                     tx_id = request.data.get('payment_transaction_id')
                     if not tx_id:
                         return Response(
@@ -158,7 +170,7 @@ class ArticleViewSet(viewsets.ModelViewSet):
                 logger.warning(f"Plagiarism auto-check skipped: file not found at {file_path}")
                 return
 
-            text_content = gemini_service.extract_text_from_pdf(file_path)
+            text_content = extract_plain_text_from_file(file_path)
             if not text_content or len(text_content.strip()) < 50:
                 text_content = article.abstract or article.title or ""
 
@@ -554,10 +566,14 @@ class ArticleViewSet(viewsets.ModelViewSet):
             article.originality_percentage = originality
             article.plagiarism_checked_at = timezone.now()
             article.plagiarism_report = report
-            article.save(update_fields=[
+            update_fields = [
                 'plagiarism_percentage', 'ai_content_percentage', 'originality_percentage',
-                'plagiarism_checked_at', 'plagiarism_report'
-            ])
+                'plagiarism_checked_at', 'plagiarism_report',
+            ]
+            if article.status == 'PaymentCompleted':
+                article.status = 'Accepted'
+                update_fields.append('status')
+            article.save(update_fields=update_fields)
             
             ActivityLog.objects.create(
                 article=article,

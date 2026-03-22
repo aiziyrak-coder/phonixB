@@ -315,8 +315,13 @@ class CreateArticleSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data['author'] = self.context['request'].user
-        # 'Yangi' = topshirilgan, jurnal admini panelida "Yangi Kelganlar" da ko'rinadi
-        validated_data['status'] = 'Yangi'
+        title = (validated_data.get('title') or '').strip()
+        keywords = validated_data.get('keywords') or []
+        is_antiplagiat = title.lower().startswith('plagiarism check') or any(
+            str(k).lower() == 'plagiarism' for k in keywords
+        )
+        # Mustaqil antiplagiat: Draft — keyin to'lov (language_editing) va tekshiruv; jurnal topshirig'i Yangi
+        validated_data['status'] = 'Draft' if is_antiplagiat else 'Yangi'
         return super().create(validated_data)
 
 

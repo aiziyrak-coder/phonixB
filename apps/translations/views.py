@@ -4,10 +4,13 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from .models import TranslationRequest
 from .serializers import TranslationRequestSerializer
-from apps.services import get_gemini_service
+from apps.services import extract_plain_text_from_file
 
 
 WORDS_PER_PAGE = 350
+# Agar matn chiqarib bo‘lmasa: fayl hajmi asosida taxmin (DOCX siqilgan — eski 150 so‘z/KB noto‘g‘ri edi)
+FALLBACK_WORDS_PER_KB = 18
+MAX_FALLBACK_WORDS = 120_000
 
 
 class TranslationRequestViewSet(viewsets.ModelViewSet):
@@ -42,24 +45,38 @@ class TranslationRequestViewSet(viewsets.ModelViewSet):
             full_path = default_storage.path(tmp_path)
             
             try:
-                # Use GeminiService to extract text
-                gemini_service = get_gemini_service()
-                text_content = gemini_service.extract_text_from_document(full_path)
-                
-                # Count words
+                # Gemini talab qilinmaydi — DOCX/PDF dan to‘g‘ridan-to‘g‘ri matn (noto‘g‘ri taxmin oldini olish uchun)
+                text_content = extract_plain_text_from_file(full_path)
+
+                # Count words (Unicode so‘zlar uchun bo‘shliq bilan ajratish)
                 words = text_content.split()
                 word_count = len(words)
+                estimate_note = None
+
+                # Matn bo‘sh bo‘lsa — konservativ taxmin (eski: file_kb * 150 juda yuqori chiqardi)
+                if word_count == 0:
+                    file_size_kb = max(file_obj.size / 1024, 0.001)
+                    word_count = min(
+                        max(int(file_size_kb * FALLBACK_WORDS_PER_KB), 50),
+                        MAX_FALLBACK_WORDS,
+                    )
+                    estimate_note = (
+                        'Hujjatdan matn ajratilmadi; fayl hajmi bo‘yicha taxminiy so‘zlar soni ishlatildi.'
+                    )
 
                 # Calculate cost based on pages using ServicePrice (translation_per_page)
                 price_per_page = get_service_amount('translation_per_page', 50000)
                 pages = max(1, ceil(max(word_count, 1) / float(WORDS_PER_PAGE)))
                 cost = int(pages * price_per_page)
 
-                return Response({
+                payload = {
                     'word_count': word_count,
                     'cost': cost,
-                    'text_preview': text_content[:500] if text_content else ""
-                })
+                    'text_preview': (text_content[:500] if text_content else ''),
+                }
+                if estimate_note:
+                    payload['note'] = estimate_note
+                return Response(payload)
             finally:
                 # Always clean up temp file
                 if os.path.exists(full_path):
@@ -69,14 +86,16 @@ class TranslationRequestViewSet(viewsets.ModelViewSet):
             import logging
             logger = logging.getLogger(__name__)
             logger.error(f"[TRANSLATION] Error analyzing file: {str(e)}", exc_info=True)
-            # Fallback to simple estimation if something fails
-            file_size_kb = file_obj.size / 1024
-            estimated_words = int(file_size_kb * 150)
+            file_size_kb = max(file_obj.size / 1024, 0.001)
+            estimated_words = min(
+                max(int(file_size_kb * FALLBACK_WORDS_PER_KB), 50),
+                MAX_FALLBACK_WORDS,
+            )
             price_per_page = get_service_amount('translation_per_page', 50000)
             pages = max(1, ceil(max(estimated_words, 1) / float(WORDS_PER_PAGE)))
             fallback_cost = int(pages * price_per_page)
             return Response({
                 'word_count': estimated_words,
                 'cost': fallback_cost,
-                'note': 'Taxminiy hisob-kitob qutqarildi.'
+                'note': 'Taxminiy hisob-kitob (fayl vaqtincha saqlanmadi). Iltimos, qayta urinib ko‘ring.',
             })

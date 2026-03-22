@@ -51,35 +51,32 @@ class ClickPaymentService:
     """Service for Click payment integration"""
     
     def __init__(self):
-        # Use settings with fallback to Service 82154 defaults (barcha to'lovlar Service 82154 orqali)
         merchant_id_raw = settings.CLICK_MERCHANT_ID or '45730'
-        service_id_raw = settings.CLICK_SERVICE_ID or '82154'  # Default: Service 82154
-        secret_key_raw = settings.CLICK_SECRET_KEY or 'XZC6u3JBBh'  # Service 82154 secret key
-        merchant_user_id_raw = settings.CLICK_MERCHANT_USER_ID or '63536'  # Service 82154 merchant user id
-        
-        # Convert to string and strip whitespace
+        service_id_raw = settings.CLICK_SERVICE_ID or '82154'
+        secret_key_raw = (getattr(settings, 'CLICK_SECRET_KEY', None) or '').strip()
+        merchant_user_id_raw = settings.CLICK_MERCHANT_USER_ID or '63536'
+
         self.merchant_id = str(merchant_id_raw).strip()
         self.service_id = str(service_id_raw).strip()
         self.secret_key = str(secret_key_raw).strip()
         self.merchant_user_id = str(merchant_user_id_raw).strip()
         self.api_url = "https://api.click.uz/v2/merchant"
-        
-        # Service-specific secret keys (Click'dan kelgan service_id ga mos)
-        # Service 82154 uchun (Ilmiyfaoliyat.uz - Click bergan kalitlar)
-        # Service 82155 uchun (Phoenix publication - Click bergan kalitlar)
-        # Service 89248 uchun (yangi PHOENIX service)
-        # Service 88045 uchun (PHOENIX - yangi service)
+
         self.service_secret_keys = {
-            '82154': getattr(settings, 'CLICK_SERVICE_82154_SECRET_KEY', 'XZC6u3JBBh'),  # Ilmiyfaoliyat.uz
-            '82155': getattr(settings, 'CLICK_SERVICE_82155_SECRET_KEY', 'icHbYQnMBx'),  # Phoenix publication
-            '89248': getattr(settings, 'CLICK_SERVICE_89248_SECRET_KEY', '08ClKUoBemAxyM'),  # Yangi PHOENIX service - Click'dan olgan to'g'ri kalit
-            '88045': getattr(settings, 'CLICK_SERVICE_88045_SECRET_KEY', 'EcyUxjPNLqxxZo'),  # PHOENIX - yangi service
+            k: v
+            for k, v in {
+                '82154': (getattr(settings, 'CLICK_SERVICE_82154_SECRET_KEY', '') or '').strip(),
+                '82155': (getattr(settings, 'CLICK_SERVICE_82155_SECRET_KEY', '') or '').strip(),
+                '89248': (getattr(settings, 'CLICK_SERVICE_89248_SECRET_KEY', '') or '').strip(),
+                '88045': (getattr(settings, 'CLICK_SERVICE_88045_SECRET_KEY', '') or '').strip(),
+            }.items()
+            if v
         }
-        
-        # Default secret key (asosiy service uchun - Service 82154)
+
         if not self.secret_key:
-            logger.error("CLICK_SECRET_KEY is empty, using default")
-            self.secret_key = 'XZC6u3JBBh'
+            logger.error(
+                "CLICK_SECRET_KEY is empty — set it in .env (Click merchant). Service-specific keys may still work."
+            )
         
         # Validate that all required fields are set (non-empty after strip)
         if not self.service_id:
@@ -715,23 +712,15 @@ class ClickPaymentService:
             
             # Get secret key for this specific service_id (Click'dan kelgan)
             service_secret_key = self.get_secret_key_for_service(service_id)
-            logger.info(f"Using secret key for service_id={service_id}")
-            
+            logger.debug("Click prepare: service_id=%s secret_key_len=%s", service_id, len(service_secret_key or ""))
+
             # Verify signature - Click dokumentatsiyasiga ko'ra:
             # md5(click_trans_id + service_id + SECRET_KEY + merchant_trans_id + amount + action + sign_time)
-            # SECRET_KEY service_id dan keyin, merchant_trans_id dan oldin keladi!
-            # click_paydoc_id signature'ga kiritilmaydi!
-            
-            logger.info(f"=== SIGNATURE DEBUG START ===")
-            logger.info(f"click_trans_id: {click_trans_id} (type: {type(click_trans_id)})")
-            logger.info(f"service_id: {service_id} (type: {type(service_id)})")
-            logger.info(f"click_paydoc_id: {click_paydoc_id} (NOT in signature)")
-            logger.info(f"merchant_trans_id: {merchant_trans_id} (type: {type(merchant_trans_id)})")
-            logger.info(f"amount: {amount} (type: {type(amount)})")
-            logger.info(f"action: {action} (type: {type(action)})")
-            logger.info(f"sign_time: {sign_time} (type: {type(sign_time)})")
-            logger.info(f"service_secret_key: {service_secret_key[:10]}... (length: {len(service_secret_key)})")
-            logger.info(f"Received sign_string: {sign_string}")
+
+            logger.debug("=== SIGNATURE DEBUG START ===")
+            logger.debug("click_trans_id=%s service_id=%s", click_trans_id, service_id)
+            logger.debug("merchant_trans_id=%s amount=%s action=%s sign_time=%s", merchant_trans_id, amount, action, sign_time)
+            logger.debug("Received sign_string=%s", sign_string)
             
             # To'g'ri signature generatsiya - Click dokumentatsiyasiga ko'ra
             # Format: md5(click_trans_id + service_id + SECRET_KEY + merchant_trans_id + amount + action + sign_time)
@@ -745,13 +734,13 @@ class ClickPaymentService:
                 str(sign_time)
             ]
             sign_string_to_hash = ''.join(sign_parts)
-            logger.info(f"Sign string parts (correct order): {[p[:20] + '...' if len(p) > 20 else p for p in sign_parts]}")
-            logger.info(f"Full sign string length: {len(sign_string_to_hash)}")
-            
+            _safe_parts = [str(p) if i != 2 else "***" for i, p in enumerate(sign_parts)]
+            logger.debug("Sign parts (secret redacted): %s len=%s", _safe_parts, len(sign_string_to_hash))
+
             expected_sign = hashlib.md5(sign_string_to_hash.encode('utf-8')).hexdigest()
-            
-            logger.info(f"Expected signature: {expected_sign}, Received signature: {sign_string}")
-            logger.info(f"=== SIGNATURE DEBUG END ===")
+
+            logger.debug("Expected=%s received=%s", expected_sign, sign_string)
+            logger.debug("=== SIGNATURE DEBUG END ===")
             
             if sign_string != expected_sign:
                 logger.error(f"Signature mismatch! Expected: {expected_sign}, Got: {sign_string}")
@@ -844,24 +833,21 @@ class ClickPaymentService:
             
             # Get secret key for this service
             service_secret_key = self.get_secret_key_for_service(service_id_for_complete)
-            logger.info(f"Complete: Using secret key for service_id={service_id_for_complete}")
-            
-            # Verify signature for complete request - Click dokumentatsiyasiga ko'ra
-            # Format: md5(click_trans_id + service_id + SECRET_KEY + merchant_trans_id + merchant_prepare_id + amount + action + sign_time)
-            # SECRET_KEY service_id dan keyin, merchant_trans_id dan oldin keladi!
-            # error parametri signature'ga kiritilmaydi!
-            
-            logger.info(f"=== COMPLETE SIGNATURE DEBUG START ===")
-            logger.info(f"click_trans_id: {click_trans_id}")
-            logger.info(f"service_id: {service_id_for_complete}")
-            logger.info(f"merchant_trans_id: {merchant_trans_id}")
-            logger.info(f"merchant_prepare_id: {merchant_prepare_id}")
-            logger.info(f"amount: {amount}")
-            logger.info(f"action: {action}")
-            logger.info(f"sign_time: {sign_time}")
-            logger.info(f"error: {error} (NOT in signature)")
-            logger.info(f"service_secret_key: {service_secret_key[:10]}...")
-            logger.info(f"Received sign_string: {sign_string}")
+            logger.debug(
+                "Click complete: service_id=%s secret_key_len=%s",
+                service_id_for_complete,
+                len(service_secret_key or ""),
+            )
+
+            logger.debug("=== COMPLETE SIGNATURE DEBUG START ===")
+            logger.debug(
+                "click_trans_id=%s merchant_trans_id=%s merchant_prepare_id=%s",
+                click_trans_id,
+                merchant_trans_id,
+                merchant_prepare_id,
+            )
+            logger.debug("amount=%s action=%s sign_time=%s error=%s", amount, action, sign_time, error)
+            logger.debug("Received sign_string=%s", sign_string)
             
             sign_parts = [
                 str(click_trans_id),
@@ -874,12 +860,13 @@ class ClickPaymentService:
                 str(sign_time)
             ]
             sign_string_to_hash = ''.join(sign_parts)
-            logger.info(f"Sign string parts (correct order): {[p[:20] + '...' if len(p) > 20 else p for p in sign_parts]}")
-            
+            _safe_complete = [str(p) if i != 2 else "***" for i, p in enumerate(sign_parts)]
+            logger.debug("Complete sign parts (secret redacted): %s", _safe_complete)
+
             expected_sign = hashlib.md5(sign_string_to_hash.encode('utf-8')).hexdigest()
-            
-            logger.info(f"Complete signature: Expected={expected_sign}, Received={sign_string}")
-            logger.info(f"=== COMPLETE SIGNATURE DEBUG END ===")
+
+            logger.debug("Complete signature: expected=%s received=%s", expected_sign, sign_string)
+            logger.debug("=== COMPLETE SIGNATURE DEBUG END ===")
             
             if sign_string and sign_string != expected_sign:
                 logger.error(f"Complete signature mismatch! Expected: {expected_sign}, Got: {sign_string}")
@@ -926,6 +913,13 @@ class ClickPaymentService:
                     fulfill_doi_request(transaction)
                 except Exception as e:
                     logger.error(f"DOI request fulfill failed: {e}", exc_info=True)
+
+            if error_int == 0 and getattr(transaction, 'service_type', None) == 'language_editing':
+                try:
+                    from apps.articles.fulfill_plagiarism_payment import fulfill_language_editing_payment
+                    fulfill_language_editing_payment(transaction)
+                except Exception as e:
+                    logger.error(f"Language editing / antiplagiat fulfill failed: {e}", exc_info=True)
             
             return {
                 'click_trans_id': click_trans_id,
