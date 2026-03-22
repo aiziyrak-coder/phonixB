@@ -81,6 +81,8 @@ class ArticleViewSet(viewsets.ModelViewSet):
             'versions', 'activity_logs', 'peer_reviews'
         )
         role = getattr(self.request.user, 'role', None) or 'author'
+        if isinstance(role, str):
+            role = role.strip().lower()
         if role == 'super_admin':
             return base_queryset.all()
         elif role == 'journal_admin':

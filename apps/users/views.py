@@ -25,9 +25,13 @@ class UserViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        role = getattr(self.request.user, 'role', None)
-        if role in ('super_admin', 'accountant', 'journal_admin'):
-            return User.objects.all().order_by('-date_joined')
+        requester = getattr(self.request.user, 'role', None)
+        if requester in ('super_admin', 'accountant', 'journal_admin'):
+            qs = User.objects.all().order_by('-date_joined')
+            role_param = self.request.query_params.get('role')
+            if role_param:
+                qs = qs.filter(role=role_param)
+            return qs
         return User.objects.filter(id=self.request.user.id)
 
     def list(self, request, *args, **kwargs):

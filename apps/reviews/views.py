@@ -19,14 +19,20 @@ class PeerReviewViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         qs = PeerReview.objects.select_related('article', 'reviewer')
-        if self.request.user.role == 'reviewer':
+        role = getattr(self.request.user, 'role', '') or ''
+        if isinstance(role, str):
+            role = role.strip().lower()
+        if role == 'reviewer':
             return qs.filter(reviewer=self.request.user)
-        elif self.request.user.role in ['super_admin', 'journal_admin']:
+        elif role in ['super_admin', 'journal_admin']:
             return qs.all()
         return qs.filter(article__author=self.request.user)
 
     def perform_create(self, serializer):
-        review = serializer.save(reviewer=self.request.user if self.request.user.role == 'reviewer' else serializer.validated_data.get('reviewer'))
+        r = getattr(self.request.user, 'role', '') or ''
+        if isinstance(r, str):
+            r = r.strip().lower()
+        review = serializer.save(reviewer=self.request.user if r == 'reviewer' else serializer.validated_data.get('reviewer'))
         # Notify reviewer if assigned by admin
         if review.reviewer != self.request.user:
             try:
@@ -118,7 +124,10 @@ class PeerReviewViewSet(viewsets.ModelViewSet):
     def review_document(self, request, pk=None):
         """Taqriz natijasini matn fayl sifatida yuklab olish (muallif uchun)."""
         review = self.get_object()
-        if review.article.author_id != request.user.id and request.user.role not in ('super_admin', 'journal_admin'):
+        ur = getattr(request.user, 'role', '') or ''
+        if isinstance(ur, str):
+            ur = ur.strip().lower()
+        if review.article.author_id != request.user.id and ur not in ('super_admin', 'journal_admin'):
             return Response({'error': 'Huquq yo\'q.'}, status=status.HTTP_403_FORBIDDEN)
         lines = [
             f"Maqola: {review.article.title}",
