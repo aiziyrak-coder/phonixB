@@ -40,6 +40,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         ('journal_admin', 'Journal Admin'),
         ('super_admin', 'Super Admin'),
         ('accountant', 'Accountant'),
+        ('operator', 'Operator'),
     )
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

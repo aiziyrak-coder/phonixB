@@ -1,8 +1,9 @@
 #!/usr/bin/env python
 """
-Test users yaratish scripti
-Django shell'da ishlatish: python manage.py shell < create_test_users.py
-Yoki to'g'ridan-to'g'ri: python create_test_users.py
+Barcha test userlarni qayta yaratish scripti
+Avval mavjud userlarni o'chiradi, keyin yangidan yaratadi
+Django shell'da ishlatish: python manage.py shell < recreate_all_users.py
+Yoki to'g'ridan-to'g'ri: python recreate_all_users.py
 """
 
 import os
@@ -16,8 +17,40 @@ if not settings.configured:
 
 from apps.users.models import User
 
-def create_test_users():
-    """Turli rol uchun test userlar yaratish"""
+def recreate_all_users():
+    """Barcha test userlarni qayta yaratish"""
+    
+    # Avval barcha test userlarni o'chirish
+    print("="*60)
+    print("🗑️  MAVJUD TEST USERLARNI O'CHIRISH")
+    print("="*60)
+    
+    test_phones = [
+        '998901001001', '998901001002', '998901001003',
+        '998901001004', '998901001005', '998901001006',
+        '998901001007'
+    ]
+    
+    deleted_count = 0
+    for phone in test_phones:
+        try:
+            users = User.objects.filter(phone=phone)
+            if users.exists():
+                count = users.count()
+                users.delete()
+                deleted_count += count
+                print(f"✅ O'chirildi: {phone} ({count} ta)")
+            else:
+                print(f"⚠️  Topilmadi: {phone}")
+        except Exception as e:
+            print(f"❌ Xatolik o'chirishda {phone}: {str(e)}")
+    
+    print(f"\n📊 Jami o'chirildi: {deleted_count} ta user\n")
+    
+    # Endi yangi userlarni yaratish
+    print("="*60)
+    print("🆕 YANGI USERLAR YARATISH")
+    print("="*60)
     
     test_users = [
         {
@@ -31,7 +64,7 @@ def create_test_users():
             'password': 'Admin@1234567890',
             'is_staff': True,
             'is_superuser': True,
-            'description': 'Super Admin - Tizom boshqaruvchi'
+            'description': 'Super Admin - Tizim boshqaruvchi'
         },
         {
             'phone': '998901001002',
@@ -58,7 +91,7 @@ def create_test_users():
             'is_staff': False,
             'is_superuser': False,
             'specializations': ['Computer Science', 'Information Technology'],
-            'description': 'Reviewer - Maqolalarni tekshiruvchi'
+            'description': 'Reviewer 1 - Kompyuter fanlari'
         },
         {
             'phone': '998901001004',
@@ -72,7 +105,7 @@ def create_test_users():
             'is_staff': False,
             'is_superuser': False,
             'specializations': ['Mathematics', 'Physics'],
-            'description': 'Reviewer - Matematics va Fizika'
+            'description': 'Reviewer 2 - Matematika va Fizika'
         },
         {
             'phone': '998901001005',
@@ -98,7 +131,7 @@ def create_test_users():
             'password': 'Accountant@1234567890',
             'is_staff': True,
             'is_superuser': False,
-            'description': 'Accountant - To\'lov boshqaruvchi'
+            'description': 'Accountant - To\\lov boshqaruvchi'
         },
         {
             'phone': '998901001007',
@@ -111,7 +144,7 @@ def create_test_users():
             'password': 'Operator@1234567890',
             'is_staff': True,
             'is_superuser': False,
-            'description': 'Operator - Barcha so\'rovlarni nazorat qiluvchi'
+            'description': 'Operator - Barcha so\\rovlarni nazorat qiluvchi'
         },
     ]
     
@@ -124,60 +157,49 @@ def create_test_users():
         description = user_data.pop('description', '')
         
         try:
-            # Check if user already exists
-            if User.objects.filter(phone=phone).exists():
-                user = User.objects.get(phone=phone)
-                print(f"⚠️  MAVJUD: {description}")
-                print(f"   Phone: {phone}")
-                print(f"   Email: {email}")
-                created_users.append({
-                    'status': 'existing',
-                    'phone': phone,
-                    'email': email,
-                    'role': user_data.get('role'),
-                    'password': password
-                })
-            else:
-                # Create new user
-                user = User.objects.create_user(
-                    phone=phone,
-                    email=email,
-                    password=password,
-                    **user_data
-                )
-                
-                # Add gamification badges
-                if user.role == 'author':
-                    user.gamification_badges = ['Yangi Muallif']
-                    user.gamification_points = 0
-                elif user.role == 'reviewer':
-                    user.gamification_badges = ['Yangi Reviewer']
-                    user.gamification_points = 0
-                elif user.role in ['super_admin', 'journal_admin']:
-                    user.gamification_badges = ['Administrator']
-                    user.gamification_points = 1000
-                
-                user.save()
-                
-                print(f"\n✅ YARATILDI: {description}")
-                print(f"   Phone: {phone}")
-                print(f"   Email: {email}")
-                print(f"   Role: {user.role}")
-                print(f"   Password: {password}")
-                
-                created_users.append({
-                    'status': 'created',
-                    'phone': phone,
-                    'email': email,
-                    'role': user.role,
-                    'password': password,
-                    'first_name': user.first_name,
-                    'last_name': user.last_name,
-                    'affiliation': user.affiliation,
-                })
+            # Create new user
+            user = User.objects.create_user(
+                phone=phone,
+                email=email,
+                password=password,
+                **user_data
+            )
+            
+            # Add gamification badges
+            if user.role == 'author':
+                user.gamification_badges = ['Yangi Muallif']
+                user.gamification_points = 0
+            elif user.role == 'reviewer':
+                user.gamification_badges = ['Yangi Reviewer']
+                user.gamification_points = 0
+            elif user.role in ['super_admin', 'journal_admin', 'operator']:
+                user.gamification_badges = ['Administrator']
+                user.gamification_points = 1000
+            elif user.role == 'accountant':
+                user.gamification_badges = ['Buxgalter']
+                user.gamification_points = 500
+            
+            user.save()
+            
+            print(f"\n✅ YARATILDI: {description}")
+            print(f"   Phone: {phone}")
+            print(f"   Email: {email}")
+            print(f"   Role: {user.role}")
+            print(f"   Password: {password}")
+            
+            created_users.append({
+                'status': 'created',
+                'phone': phone,
+                'email': email,
+                'role': user.role,
+                'password': password,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'affiliation': user.affiliation,
+            })
         
         except Exception as e:
-            print(f"❌ XATOLIK: {description}")
+            print(f"\n❌ XATOLIK: {description}")
             print(f"   Phone: {phone}")
             print(f"   Error: {str(e)}")
             created_users.append({
@@ -189,29 +211,40 @@ def create_test_users():
     
     # Summary
     print("\n" + "="*60)
-    print("📊 YARATILGAN USERLAR HISOB-KITOB")
+    print("📊 YAKUNIY HISOB")
     print("="*60)
-    print(f"Jami: {len(created_users)}")
-    print(f"Yaratildi: {len([u for u in created_users if u['status'] == 'created'])}")
-    print(f"Mavjud: {len([u for u in created_users if u['status'] == 'existing'])}")
+    print(f"Jami yaratildi: {len(created_users)}")
+    print(f"Muvaffaqiyatli: {len([u for u in created_users if u['status'] == 'created'])}")
     print(f"Xatolik: {len([u for u in created_users if u['status'] == 'error'])}")
     
-    # Print table
-    print("\n" + "="*60)
-    print("🔐 USER CREDENTIALS")
-    print("="*60)
+    # Print credentials table
+    print("\n" + "="*70)
+    print("🔐 BARCHA FOYDALANUVCHILAR LOGIN MA'LUMOTLARI")
+    print("="*70)
     
     for user in created_users:
-        if user['status'] in ['created', 'existing']:
-            print(f"\n{user['email']}")
-            print(f"  Phone: {user['phone']}")
-            print(f"  Role: {user['role']}")
-            print(f"  Password: {user['password']}")
+        if user['status'] == 'created':
+            role_emoji = {
+                'super_admin': '👑',
+                'journal_admin': '📝',
+                'reviewer': '✅',
+                'author': '✍️',
+                'accountant': '💰',
+                'operator': '📋'
+            }.get(user['role'], '👤')
+            
+            print(f"\n{role_emoji} {user['email']}")
+            print(f"   📱 Phone: {user['phone']}")
+            print(f"   🎭 Role: {user['role']}")
+            print(f"   🔑 Password: {user['password']}")
     
-    print("\n" + "="*60)
+    print("\n" + "="*70)
+    print("ℹ️  DIQQAT! Barcha parollar oshkor ko'rsatilgan.")
+    print("   Production muhitda parollarni o'zgartiring!")
+    print("="*70)
     
     return created_users
 
 
 if __name__ == '__main__':
-    create_test_users()
+    recreate_all_users()
