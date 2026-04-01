@@ -5,7 +5,9 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model
 from django.views.decorators.csrf import csrf_exempt
+from django.db import DatabaseError
 from django.db.models import Count, Q, Sum
+from rest_framework.exceptions import ParseError
 from django.conf import settings
 from apps.articles.models import Article, ActivityLog
 from apps.payments.models import Transaction
@@ -498,7 +500,7 @@ def register(request):
                         'detail': 'Ro\'yxatdan o\'tishda xatolik yuz berdi. Iltimos, qayta urinib ko\'ring.',
                     }, status=status.HTTP_400_BAD_REQUEST)
         
-        logger.warning(f"Registration validation failed: {serializer.errors}")
+        logger.warning("Registration validation failed")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         import traceback
@@ -520,37 +522,65 @@ def login(request):
     logger = logging.getLogger(__name__)
     
     try:
-        # DRF automatically parses request.data for JSON requests
-        # Check if data exists
-        if not request.data:
+        try:
+            payload = request.data
+        except ParseError:
+            return Response(
+                {
+                    'non_field_errors': [
+                        'So\'rov JSON formatida bo\'lishi kerak. Content-Type: application/json tekshiring.',
+                    ],
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not payload:
             logger.error("No data provided in login request")
             return Response({
                 'detail': 'No data provided',
                 'non_field_errors': ['Telefon raqam va parol kiritilishi shart']
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Log the incoming data for debugging
-        phone_value = request.data.get('phone', 'N/A')
-        has_password = bool(request.data.get('password'))
-        logger.info(f"Login attempt - phone: {str(phone_value)[:15]}..., has password: {has_password}")
+        phone_value = payload.get('phone', 'N/A')
+        has_password = bool(payload.get('password'))
+        logger.info("Login attempt - phone prefix present: %s", bool(phone_value and str(phone_value) != 'N/A'))
         
-        # Use DRF's standard serializer validation
-        serializer = LoginSerializer(data=request.data, context={'request': request})
+        serializer = LoginSerializer(data=payload, context={'request': request})
+        try:
+            is_ok = serializer.is_valid()
+        except DatabaseError:
+            logger.exception("Login: database error during credential check")
+            return Response(
+                {
+                    'non_field_errors': [
+                        'Ma\'lumotlar bazasiga vaqtincha ulanib bo\'lmadi. Bir necha daqiqadan keyin urinib ko\'ring.',
+                    ],
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
         
-        if serializer.is_valid():
+        if is_ok:
             user = serializer.validated_data['user']
             refresh = RefreshToken.for_user(user)
-            logger.info(f"Login successful for user: {user.phone}")
+            logger.info("Login successful for user phone ending: %s", str(user.phone)[-4:])
             return Response({
                 'user': UserSerializer(user, context={'request': request}).data,
                 'refresh': str(refresh),
                 'access': str(refresh.access_token),
             })
-        else:
-            logger.warning(f"Login validation failed: {serializer.errors}")
-            # Return detailed validation errors
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        logger.warning("Login validation failed (bad credentials or format)")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
             
+    except DatabaseError:
+        logger.exception("Login: database error")
+        return Response(
+            {
+                'non_field_errors': [
+                    'Ma\'lumotlar bazasiga vaqtincha ulanib bo\'lmadi. Bir necha daqiqadan keyin urinib ko\'ring.',
+                ],
+            },
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
     except Exception as e:
         logger.error(f"Login exception: {str(e)}", exc_info=True)
         return Response({
