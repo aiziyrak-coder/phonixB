@@ -60,11 +60,13 @@ INSTALLED_APPS = [
     'apps.udc',
 ]
 
+# CorsMiddleware must be as high as possible (before WhiteNoise / CommonMiddleware) so
+# OPTIONS preflight and API responses always get CORS headers from django-cors-headers.
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -209,12 +211,16 @@ if cors_allow_all_lower in ('true', '1', 'yes', 'on'):
 
 # Clean CORS_ALLOWED_ORIGINS - remove spaces and filter empty strings
 # Production origins
-cors_origins_env = os.getenv('CORS_ALLOWED_ORIGINS', 'https://ilmiyfaoliyat.uz,http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173')
+cors_origins_env = os.getenv(
+    'CORS_ALLOWED_ORIGINS',
+    'https://ilmiyfaoliyat.uz,https://www.ilmiyfaoliyat.uz,http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173',
+)
 CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins_env.split(',') if origin.strip()]
 
-# Ensure production origin is always included
-if 'https://ilmiyfaoliyat.uz' not in CORS_ALLOWED_ORIGINS:
-    CORS_ALLOWED_ORIGINS.append('https://ilmiyfaoliyat.uz')
+# Ensure production origins are always included (www and apex)
+for _origin in ('https://ilmiyfaoliyat.uz', 'https://www.ilmiyfaoliyat.uz'):
+    if _origin not in CORS_ALLOWED_ORIGINS:
+        CORS_ALLOWED_ORIGINS.append(_origin)
 
 # If CORS_ALLOW_ALL_ORIGINS is True, clear CORS_ALLOWED_ORIGINS (django-cors-headers behavior)
 if CORS_ALLOW_ALL_ORIGINS:
@@ -257,6 +263,20 @@ CORS_EXPOSE_HEADERS = ['Content-Type', 'X-CSRFToken']  # Exposed headers
 
 # Ensure CORS middleware processes OPTIONS requests correctly
 # This is handled automatically by corsheaders, but we ensure settings are correct
+
+# CSRF (SessionMiddleware + HTTPS) — frontend domenlari; API boshqa dasturlarga tegmaydi
+_csrf_trusted = os.getenv('CSRF_TRUSTED_ORIGINS', '').strip()
+if _csrf_trusted:
+    CSRF_TRUSTED_ORIGINS = [x.strip() for x in _csrf_trusted.split(',') if x.strip()]
+else:
+    CSRF_TRUSTED_ORIGINS = [
+        'https://ilmiyfaoliyat.uz',
+        'https://www.ilmiyfaoliyat.uz',
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+    ]
 
 # File Upload Settings
 FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB

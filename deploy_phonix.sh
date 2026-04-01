@@ -29,6 +29,23 @@ npm run build
 echo "[4/6] Backend: restart..."
 sudo systemctl restart "${SERVICE_BACKEND}"
 
+# Gunicorn tinglashni kutamiz (boshqa dasturlar portni band qilgan bo'lsa — 502 + "CORS" xato ko'rinadi)
+sleep 3
+HTTP_CODE=$(curl -sS -o /dev/null -w "%{http_code}" --connect-timeout 2 --max-time 15 "http://127.0.0.1:8000/api/v1/auth/login/" || echo "000")
+if [ "$HTTP_CODE" = "000" ]; then
+  echo "[XATO] 127.0.0.1:8000 ga ulanib bo'lmadi (gunicorn ishlamayapti yoki boshqa port)."
+  echo "        Tekshiring: sudo systemctl status ${SERVICE_BACKEND} --no-pager | head -25"
+  echo "        Log: sudo journalctl -u ${SERVICE_BACKEND} -n 40 --no-pager"
+  exit 1
+fi
+# GET login odatda 405 — bu normal (endpoint POST). 200/400/401 ham bo'lishi mumkin.
+case "$HTTP_CODE" in
+  405|200|400|401|403) ;;
+  *)
+    echo "[OGohlantirish] Loopback javob HTTP $HTTP_CODE (kutilgan: 405 yoki 4xx/200)."
+    ;;
+esac
+
 echo "[5/6] Frontend: yangi build tayyor (static fayllar yangilandi)."
 echo "[6/6] Nginx: reload (frontend sayt yangilanishi)..."
 sudo systemctl reload nginx 2>/dev/null || true
@@ -36,4 +53,5 @@ sudo systemctl reload nginx 2>/dev/null || true
 echo ""
 echo "=== TUGADI ==="
 echo "Backend:  $(sudo systemctl is-active ${SERVICE_BACKEND} 2>/dev/null || echo '?')"
+echo "Loopback: HTTP ${HTTP_CODE} (login endpoint)"
 echo "Frontend: static build + nginx reload bajarildi."
