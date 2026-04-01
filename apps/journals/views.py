@@ -75,7 +75,7 @@ class IssueViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         # Optimize queries. Journal admin sees only issues of their assigned journals.
-        base = Issue.objects.select_related('journal', 'journal__journal_admin').prefetch_related('articles')
+        base = Issue.objects.select_related('journal').prefetch_related('articles')
         role = getattr(self.request.user, 'role', None) if self.request.user.is_authenticated else None
         if isinstance(role, str):
             role = role.strip().lower()

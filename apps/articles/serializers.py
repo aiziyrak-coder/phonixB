@@ -2,6 +2,24 @@ import json
 from rest_framework import serializers
 from .models import Article, ArticleVersion, ActivityLog, DoiRequest, ArticleSampleRequest
 from apps.users.serializers import UserSerializer
+from apps.journals.models import Journal
+
+
+class JournalPKField(serializers.PrimaryKeyRelatedField):
+    """Bo'sh journal ID FormData/JSON da Journal.objects.get(pk='') ORM xatosini oldini oladi."""
+
+    default_error_messages = {
+        **serializers.PrimaryKeyRelatedField.default_error_messages,
+        'blank_pk': 'Jurnal tanlanishi majburiy (ID bo\'sh).',
+    }
+
+    def to_internal_value(self, data):
+        if data is None:
+            self.fail('required')
+        s = str(data).strip()
+        if not s:
+            self.fail('blank_pk')
+        return super().to_internal_value(s)
 
 
 class ArticleVersionSerializer(serializers.ModelSerializer):
@@ -293,6 +311,8 @@ class ArticleSerializer(serializers.ModelSerializer):
 
 
 class CreateArticleSerializer(serializers.ModelSerializer):
+    journal = JournalPKField(queryset=Journal.objects.all())
+
     class Meta:
         model = Article
         fields = ('id', 'title', 'abstract', 'keywords', 'journal', 'final_pdf_path',

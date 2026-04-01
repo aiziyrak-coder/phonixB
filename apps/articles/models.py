@@ -130,9 +130,10 @@ class ActivityLog(models.Model):
 
 
 # Narx 1 bet uchun (so'm)
-ARTICLE_SAMPLE_PRICE_QUYI = 15_000   # Quyi sifatli
-ARTICLE_SAMPLE_PRICE_ORTA = 20_000   # O'rta sifatli
-ARTICLE_SAMPLE_PRICE_YUQORI = 25_000  # Yuqori sifatli
+# Eslatma: haqiqiy narxlar ServicePrice (udc) va views.get_service_amount defaultlari orqali.
+ARTICLE_SAMPLE_PRICE_QUYI = 25_000   # Quyi sifatli (1 bet)
+ARTICLE_SAMPLE_PRICE_ORTA = 45_000   # O'rta sifatli (1 bet)
+ARTICLE_SAMPLE_PRICE_YUQORI = 75_000  # Yuqori sifatli (1 bet)
 
 
 class ArticleSampleRequest(models.Model):

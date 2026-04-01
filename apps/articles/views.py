@@ -2,15 +2,26 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from .models import Article, ArticleVersion, ActivityLog, ArticleSampleRequest, DoiRequest
+from .models import (
+    Article,
+    ArticleVersion,
+    ActivityLog,
+    ArticleSampleRequest,
+    DoiRequest,
+    ARTICLE_SAMPLE_PRICE_QUYI,
+    ARTICLE_SAMPLE_PRICE_ORTA,
+    ARTICLE_SAMPLE_PRICE_YUQORI,
+)
 from .serializers import ArticleSerializer, ArticleListSerializer, CreateArticleSerializer, ArticleVersionSerializer, PublicArticleShareSerializer, DoiRequestSerializer, ArticleSampleRequestSerializer
 from apps.notifications.models import Notification
 from apps.payments.models import Transaction
 from apps.journals.models import Journal
+from django.conf import settings
 from django.utils import timezone
 from apps.services import get_gemini_service, extract_plain_text_from_file
 import logging
 import os
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -75,8 +86,10 @@ class ArticleViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         # Optimize queries with select_related and prefetch_related
+        # journal__journal_admin ba'zi DB/ORM versiyalarida JoinInfo/UUID join xatosiga olib kelishi mumkin;
+        # ro'yxat serializerlari journal_admin obyektini talab qilmaydi.
         base_queryset = Article.objects.select_related(
-            'author', 'journal', 'journal__journal_admin', 'published_by'
+            'author', 'journal', 'published_by'
         ).prefetch_related(
             'versions', 'activity_logs', 'peer_reviews'
         )
@@ -135,7 +148,7 @@ class ArticleViewSet(viewsets.ModelViewSet):
                             {'detail': 'To\'lov tranzaksiyasi topilmadi yoki noto\'g\'ri. To\'lovni qayta tekshiring.'},
                             status=status.HTTP_400_BAD_REQUEST
                         )
-                    if tx.user_id != request.user.id:
+                    if str(tx.user_id) != str(request.user.id):
                         return Response({'detail': 'Ushbu to\'lov sizga tegishli emas.'}, status=status.HTTP_400_BAD_REQUEST)
                     if tx.status != 'completed':
                         return Response(
@@ -146,9 +159,18 @@ class ArticleViewSet(viewsets.ModelViewSet):
                         return Response({'detail': 'Noto\'g\'ri to\'lov turi.'}, status=status.HTTP_400_BAD_REQUEST)
             except Journal.DoesNotExist:
                 pass
-        self.perform_create(serializer)
-        headers = self.get_success_headers(serializer.data)
-        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        try:
+            self.perform_create(serializer)
+            headers = self.get_success_headers(serializer.data)
+            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        except Exception as e:
+            logger.exception('Article create failed: %s', e)
+            detail = (
+                str(e)
+                if settings.DEBUG
+                else 'Maqola yuborishda server xatoligi yuz berdi. Keyinroq qayta urinib ko‘ring yoki administrator bilan bog‘laning.'
+            )
+            return Response({'detail': detail}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def perform_create(self, serializer):
         article = serializer.save()
@@ -165,7 +187,6 @@ class ArticleViewSet(viewsets.ModelViewSet):
             try:
                 file_path = article.final_pdf_path.path
             except Exception:
-                from django.conf import settings
                 file_path = os.path.join(settings.MEDIA_ROOT, str(article.final_pdf_path))
 
             if not os.path.exists(file_path):
@@ -556,13 +577,35 @@ class ArticleViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def check_plagiarism(self, request, pk=None):
         """Check article for plagiarism. Requires a completed payment for this article (language_editing)."""
-        logger.info(f"[CHECK_PLAGE] Starting plagiarism check for article {pk} by user {request.user.id if request.user else 'ANON'}")
+        raw_pk = pk if pk is not None else self.kwargs.get(self.lookup_field or 'pk')
+        if raw_pk is None or str(raw_pk).strip() == '':
+            return Response(
+                {'error': 'Maqola identifikatori yo\'q yoki noto\'g\'ri.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            uuid.UUID(str(raw_pk))
+        except (ValueError, TypeError, AttributeError):
+            return Response(
+                {'error': 'Maqola ID noto\'g\'ri formatda.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        logger.info(f"[CHECK_PLAGE] Starting plagiarism check for article {raw_pk} by user {request.user.id if request.user else 'ANON'}")
         article = self.get_object()
-        
+
         # Permission: author (own), super_admin (any), journal_admin (own journal only)
         if article.author != request.user and request.user.role != 'super_admin':
             if request.user.role == 'journal_admin':
-                if article.journal.journal_admin_id != request.user.id:
+                # To'g'ridan-to'g'ri Journal qidiruvi — article.journal lazy load / FK nozik holatlarda xavfsizroq
+                admin_id = None
+                if getattr(article, 'journal_id', None):
+                    admin_id = (
+                        Journal.objects.filter(pk=article.journal_id)
+                        .values_list('journal_admin_id', flat=True)
+                        .first()
+                    )
+                if admin_id != request.user.id:
                     return Response(
                         {'error': 'Siz faqat o\'z jurnalingizdagi maqolalarni tekshirishingiz mumkin'},
                         status=status.HTTP_403_FORBIDDEN
@@ -709,11 +752,12 @@ def public_article_detail(request, pk):
 # ---------- Maqola namuna olish (taqrizchiga yuborish) ----------
 def _article_sample_price_per_page(quality: str) -> int:
     from apps.udc.services import get_service_amount
+    # 1 bet narxi (ServicePrice da boshqariladi; defaultlar yangilangan)
     if quality == 'yuqori':
-        return int(get_service_amount('article_sample_yuqori', 400000))
+        return int(get_service_amount('article_sample_yuqori', ARTICLE_SAMPLE_PRICE_YUQORI))
     if quality == 'orta':
-        return int(get_service_amount('article_sample_orta', 250000))
-    return int(get_service_amount('article_sample_quyi', 150000))
+        return int(get_service_amount('article_sample_orta', ARTICLE_SAMPLE_PRICE_ORTA))
+    return int(get_service_amount('article_sample_quyi', ARTICLE_SAMPLE_PRICE_QUYI))
 
 
 @api_view(['GET'])
@@ -721,9 +765,9 @@ def _article_sample_price_per_page(quality: str) -> int:
 def article_sample_price(request):
     """1 bet narxlari: Narxlar sahifasida (ServicePrice) o'rnatiladi."""
     from apps.udc.services import get_service_amount
-    quyi = int(get_service_amount('article_sample_quyi', 150000))
-    orta = int(get_service_amount('article_sample_orta', 250000))
-    yuqori = int(get_service_amount('article_sample_yuqori', 400000))
+    quyi = int(get_service_amount('article_sample_quyi', ARTICLE_SAMPLE_PRICE_QUYI))
+    orta = int(get_service_amount('article_sample_orta', ARTICLE_SAMPLE_PRICE_ORTA))
+    yuqori = int(get_service_amount('article_sample_yuqori', ARTICLE_SAMPLE_PRICE_YUQORI))
     return Response({
         'quyi': quyi,
         'orta': orta,

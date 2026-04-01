@@ -36,23 +36,28 @@ class Command(BaseCommand):
             {
                 'service_key': 'article_sample_quyi',
                 'label': 'Maqola namuna olish (Quyi sifat)',
-                'amount': 150000,
+                'amount': 25000,
             },
             {
                 'service_key': 'article_sample_orta',
                 'label': 'Maqola namuna olish (O\'rta sifat)',
-                'amount': 250000,
+                'amount': 45000,
             },
             {
                 'service_key': 'article_sample_yuqori',
                 'label': 'Maqola namuna olish (Yuqori sifat)',
-                'amount': 400000,
+                'amount': 75000,
             },
             # Tarjima xizmatlari
             {
                 'service_key': 'translation_per_page',
-                'label': 'Tarjima xizmati (1 bet uchun)',
+                'label': 'Tarjima xizmati (1 bet uchun) — eski; hozir translation_per_word ishlatiladi',
                 'amount': 50000,
+            },
+            {
+                'service_key': 'translation_per_word',
+                'label': "Tarjima xizmati (1 so'z)",
+                'amount': 100,
             },
             # Kitob nashr
             {

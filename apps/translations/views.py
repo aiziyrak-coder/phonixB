@@ -7,7 +7,6 @@ from .serializers import TranslationRequestSerializer
 from apps.services import extract_plain_text_from_file
 
 
-WORDS_PER_PAGE = 350
 # Agar matn chiqarib bo‘lmasa: fayl hajmi asosida taxmin (DOCX siqilgan — eski 150 so‘z/KB noto‘g‘ri edi)
 FALLBACK_WORDS_PER_KB = 18
 MAX_FALLBACK_WORDS = 120_000
@@ -38,7 +37,6 @@ class TranslationRequestViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Fayl taqdim etilmadi'}, status=status.HTTP_400_BAD_REQUEST)
             
         file_obj = request.FILES['file']
-        from math import ceil
         from apps.udc.services import get_service_amount
 
         try:
@@ -69,14 +67,14 @@ class TranslationRequestViewSet(viewsets.ModelViewSet):
                         'Hujjatdan matn ajratilmadi; fayl hajmi bo‘yicha taxminiy so‘zlar soni ishlatildi.'
                     )
 
-                # Calculate cost based on pages using ServicePrice (translation_per_page)
-                price_per_page = get_service_amount('translation_per_page', 50000)
-                pages = max(1, ceil(max(word_count, 1) / float(WORDS_PER_PAGE)))
-                cost = int(pages * price_per_page)
+                # Narx: har bir so‘z (ServicePrice: translation_per_word, default 100 so‘m)
+                price_per_word = int(get_service_amount('translation_per_word', 100))
+                cost = int(max(word_count, 0) * price_per_word)
 
                 payload = {
                     'word_count': word_count,
                     'cost': cost,
+                    'price_per_word': price_per_word,
                     'text_preview': (text_content[:500] if text_content else ''),
                 }
                 if estimate_note:
@@ -96,11 +94,11 @@ class TranslationRequestViewSet(viewsets.ModelViewSet):
                 max(int(file_size_kb * FALLBACK_WORDS_PER_KB), 50),
                 MAX_FALLBACK_WORDS,
             )
-            price_per_page = get_service_amount('translation_per_page', 50000)
-            pages = max(1, ceil(max(estimated_words, 1) / float(WORDS_PER_PAGE)))
-            fallback_cost = int(pages * price_per_page)
+            price_per_word = int(get_service_amount('translation_per_word', 100))
+            fallback_cost = int(max(estimated_words, 0) * price_per_word)
             return Response({
                 'word_count': estimated_words,
                 'cost': fallback_cost,
+                'price_per_word': price_per_word,
                 'note': 'Taxminiy hisob-kitob (fayl vaqtincha saqlanmadi). Iltimos, qayta urinib ko‘ring.',
             })

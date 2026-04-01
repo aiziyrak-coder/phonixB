@@ -825,12 +825,10 @@ class ClickPaymentService:
             transaction = _find_transaction_by_merchant_trans_id(merchant_trans_id)
             if not transaction:
                 return {'error': -5, 'error_note': 'Transaction not found'}
-            # Lock row for update
-            transaction = Transaction.objects.select_for_update().get(pk=transaction.pk)
-            
+
             # Get service_id from request or transaction (saved during prepare) or use default
             service_id_for_complete = service_id or getattr(transaction, 'click_service_id', None) or self.service_id
-            
+
             # Get secret key for this service
             service_secret_key = self.get_secret_key_for_service(service_id_for_complete)
             logger.debug(
@@ -872,26 +870,31 @@ class ClickPaymentService:
                 logger.error(f"Complete signature mismatch! Expected: {expected_sign}, Got: {sign_string}")
                 logger.error(f"Correct format: md5(click_trans_id + service_id + SECRET_KEY + merchant_trans_id + merchant_prepare_id + amount + action + sign_time)")
                 return {'error': -1, 'error_note': 'Invalid signature'}
-            
-            # Use atomic transaction to ensure status update is saved consistently
+
             # Click may send error as int 0 or string "0"
             try:
                 error_int = int(error) if error is not None else -1
             except (TypeError, ValueError):
                 error_int = -1
+
+            # select_for_update() faqat atomic() ichida (PostgreSQL); aks holda xatolik va Click "to'lov xatosi" ko'rsatadi
             with db_transaction.atomic():
+                locked = Transaction.objects.select_for_update().get(pk=transaction.pk)
                 if error_int == 0:
-                    transaction.status = 'completed'
-                    transaction.completed_at = timezone.now()
-                    transaction.click_paydoc_id = data.get('click_paydoc_id', transaction.click_paydoc_id or '')
-                    transaction.click_trans_id = click_trans_id
-                    transaction.error_note = ''
+                    locked.status = 'completed'
+                    locked.completed_at = timezone.now()
+                    locked.click_paydoc_id = data.get('click_paydoc_id', locked.click_paydoc_id or '')
+                    locked.click_trans_id = click_trans_id
+                    locked.error_note = ''
                 else:
-                    transaction.status = 'failed'
-                    transaction.error_note = str(data.get('error_note', ''))[:500]
-                transaction.save(update_fields=['status', 'completed_at', 'click_paydoc_id', 'click_trans_id', 'error_note'])
-                
-                logger.info(f"Transaction {transaction.id} status updated to '{transaction.status}'")
+                    locked.status = 'failed'
+                    locked.error_note = str(data.get('error_note', ''))[:500]
+                locked.save(
+                    update_fields=['status', 'completed_at', 'click_paydoc_id', 'click_trans_id', 'error_note']
+                )
+                logger.info("Transaction %s status updated to '%s'", locked.id, locked.status)
+
+            transaction = locked
             
             if error_int == 0 and getattr(transaction, 'service_type', None) == 'udk_request':
                 try:
