@@ -1,5 +1,7 @@
 #!/bin/bash
 # Phoenix to'liq deploy: backend + frontend + restart (ilmiyfaoliyat.uz)
+# Boshqa loyihalarga ta'sir: faqat systemctl restart phoenix-backend va nginx reload.
+# Boshqa servislar (medora, fjsti.ziyrak.org va hokazo) systemd orqali alohida — bu skript ularni to'xtatmaydi.
 # Ishga tushirish: bash deploy_phonix.sh  yoki  wget -qO- https://raw.githubusercontent.com/aiziyrak-coder/phonixB/master/deploy_phonix.sh | bash
 set -e
 DEPLOY_DIR="/phonix"
