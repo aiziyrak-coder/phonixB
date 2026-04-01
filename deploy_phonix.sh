@@ -47,8 +47,14 @@ case "$HTTP_CODE" in
 esac
 
 echo "[5/6] Frontend: yangi build tayyor (static fayllar yangilandi)."
+echo "[5b/6] Nginx api: eski 8003 -> 8000 (faqat api-ilmiyfaoliyat.conf)..."
+API_NGX="/etc/nginx/sites-available/api-ilmiyfaoliyat.conf"
+if [ -f "$API_NGX" ] && grep -q '127.0.0.1:8003' "$API_NGX" 2>/dev/null; then
+  sudo sed -i 's/127.0.0.1:8003/127.0.0.1:8000/g' "$API_NGX"
+  echo "      proxy_pass 8003 -> 8000 tuzatildi."
+fi
 echo "[6/6] Nginx: reload (frontend sayt yangilanishi)..."
-sudo systemctl reload nginx 2>/dev/null || true
+sudo nginx -t 2>/dev/null && sudo systemctl reload nginx 2>/dev/null || true
 
 echo ""
 echo "=== TUGADI ==="
