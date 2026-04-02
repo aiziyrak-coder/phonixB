@@ -283,7 +283,12 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
 
 # Gemini AI — faqat serverda .env da o'rnating (GitHubga yozmang)
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
+# Bir nechta nomlar bilan kelishi mumkin (legacy): GOOGLE_API_KEY, GENAI_API_KEY
+GEMINI_API_KEY = (
+    (os.getenv('GEMINI_API_KEY') or '').strip()
+    or (os.getenv('GOOGLE_API_KEY') or '').strip()
+    or (os.getenv('GENAI_API_KEY') or '').strip()
+)
 
 # UDK: to'lovni vaqtincha o'chirish (False = bepul, darhol bajariladi; True = to'lov kerak)
 UDK_PAYMENT_ENABLED = os.getenv('UDK_PAYMENT_ENABLED', 'false').lower() in ('true', '1', 'yes')

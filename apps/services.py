@@ -131,14 +131,20 @@ class GeminiService:
     """Service for Gemini AI integration"""
     
     def __init__(self):
+        self.api_key = (getattr(settings, "GEMINI_API_KEY", "") or "").strip()
+        if not self.api_key:
+            logger.warning("GEMINI_API_KEY is not set; Gemini deep analysis will be skipped (heuristic-only)")
         if USE_NEW_GENAI:
             # New google.genai package
-            self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
+            self.client = genai.Client(api_key=self.api_key) if self.api_key else None
             self.model_name = 'gemini-pro'
         else:
             # Deprecated google.generativeai package
-            genai.configure(api_key=settings.GEMINI_API_KEY)
-            self.model = genai.GenerativeModel('gemini-pro')
+            if self.api_key:
+                genai.configure(api_key=self.api_key)
+                self.model = genai.GenerativeModel('gemini-pro')
+            else:
+                self.model = None
             self.client = None
     
     def generate_abstract_and_keywords(self, article_text):
@@ -454,6 +460,8 @@ class GeminiService:
 
     def _gemini_deep_analysis(self, text, sections):
         """Run deep Gemini AI analysis with professional prompt."""
+        if not self.api_key:
+            return None
         try:
             prompt = f"""You are an advanced academic integrity analysis engine, combining the capabilities of Turnitin, Copyleaks, GPTZero, and Originality.ai.
 
@@ -497,12 +505,16 @@ Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
 IMPORTANT: For "sources", do a deep analysis: identify specific phrases or sentences that look copied. For each, suggest a concrete search URL (Google Scholar, Google, CyberLeninka, eLibrary, ResearchGate, etc.) using the suspicious phrase as the search query (URL-encoded). Provide 0-8 sources. If no clear plagiarism, return empty sources array."""
 
             if USE_NEW_GENAI:
+                if not self.client:
+                    return None
                 response = self.client.models.generate_content(
                     model=self.model_name,
                     contents=prompt
                 )
                 result_text = response.text if hasattr(response, 'text') else str(response)
             else:
+                if not self.model:
+                    return None
                 response = self.model.generate_content(prompt)
                 result_text = response.text
 
