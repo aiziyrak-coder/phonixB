@@ -19,7 +19,22 @@ class JournalPKField(serializers.PrimaryKeyRelatedField):
         s = str(data).strip()
         if not s:
             self.fail('blank_pk')
-        return super().to_internal_value(s)
+        try:
+            return super().to_internal_value(s)
+        except serializers.ValidationError:
+            # Frontend ba'zan UUID o'rniga jurnal nomi yoki "__str__" ko'rinishini yuborishi mumkin.
+            # Masalan: "Jurnal nomi (1230-3494)". Shunda name/issn orqali fallback qilamiz.
+            by_name = Journal.objects.filter(name__iexact=s).first()
+            if by_name:
+                return by_name
+            if s.endswith(')') and ' (' in s:
+                left, _, right = s.rpartition(' (')
+                issn = right[:-1].strip()
+                if left.strip() and issn:
+                    by_str = Journal.objects.filter(name__iexact=left.strip(), issn__iexact=issn).first()
+                    if by_str:
+                        return by_str
+            raise
 
 
 class ArticleVersionSerializer(serializers.ModelSerializer):
