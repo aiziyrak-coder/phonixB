@@ -290,8 +290,8 @@ GEMINI_API_KEY = (
     or (os.getenv('GENAI_API_KEY') or '').strip()
 )
 
-# UDK: to'lovni vaqtincha o'chirish (False = bepul, darhol bajariladi; True = to'lov kerak)
-UDK_PAYMENT_ENABLED = os.getenv('UDK_PAYMENT_ENABLED', 'false').lower() in ('true', '1', 'yes')
+# UDK: to'lov boshqaruvi (False = bepul, darhol bajariladi; True = to'lov kerak)
+UDK_PAYMENT_ENABLED = os.getenv('UDK_PAYMENT_ENABLED', 'true').lower() in ('true', '1', 'yes')
 
 # Click Payment Settings — maxfiy kalitlar faqat .env (Gitga yozilmaydi)
 CLICK_MERCHANT_ID = os.getenv('CLICK_MERCHANT_ID', '45730')
