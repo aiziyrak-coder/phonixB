@@ -272,6 +272,13 @@ for _origin in ('https://ilmiyfaoliyat.uz', 'https://www.ilmiyfaoliyat.uz'):
     if _origin not in CORS_ALLOWED_ORIGINS:
         CORS_ALLOWED_ORIGINS.append(_origin)
 
+# Regex fallback: production .env often lists only dev origins; without this, SPA login preflight fails
+# (verified: OPTIONS with Origin https://ilmiyfaoliyat.uz had no Allow-Origin while localhost:5173 did).
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r'^https://ilmiyfaoliyat\.uz$',
+    r'^https://www\.ilmiyfaoliyat\.uz$',
+]
+
 # If CORS_ALLOW_ALL_ORIGINS is True, clear CORS_ALLOWED_ORIGINS (django-cors-headers behavior)
 if CORS_ALLOW_ALL_ORIGINS:
     CORS_ALLOWED_ORIGINS = []
@@ -279,7 +286,10 @@ if CORS_ALLOW_ALL_ORIGINS:
 # Debug logging (for troubleshooting)
 logger = logging.getLogger(__name__)
 if not CORS_ALLOW_ALL_ORIGINS:
-    logger.info(f"CORS settings: ALLOW_ALL=False, ALLOWED_ORIGINS={CORS_ALLOWED_ORIGINS}, ENV_VALUE={cors_allow_all_env}")
+    logger.info(
+        f"CORS settings: ALLOW_ALL=False, ALLOWED_ORIGINS={CORS_ALLOWED_ORIGINS}, "
+        f"REGEXES={len(CORS_ALLOWED_ORIGIN_REGEXES)} pattern(s), ENV_VALUE={cors_allow_all_env}"
+    )
 else:
     logger.warning(f"CORS_ALLOW_ALL_ORIGINS is True! This should be False in production. ENV_VALUE={cors_allow_all_env}")
 
@@ -304,15 +314,8 @@ CORS_ALLOW_HEADERS = [
     'x-request-id',
 ]
 
-# Ensure CORS middleware handles OPTIONS preflight correctly
 CORS_PREFLIGHT_MAX_AGE = 3600
 CORS_EXPOSE_HEADERS = ['Content-Type', 'X-CSRFToken', 'X-Request-ID']
-
-# Additional CORS settings for better compatibility
-CORS_PREFLIGHT_MAX_AGE = 3600  # Preflight cache time (1 hour)
-
-# Ensure CORS middleware processes OPTIONS requests correctly
-# This is handled automatically by corsheaders, but we ensure settings are correct
 
 # CSRF (SessionMiddleware + HTTPS) — frontend domenlari; API boshqa dasturlarga tegmaydi
 _csrf_trusted = os.getenv('CSRF_TRUSTED_ORIGINS', '').strip()
