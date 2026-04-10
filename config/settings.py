@@ -300,15 +300,16 @@ CORS_ALLOW_HEADERS = [
     'x-csrftoken',
     'x-requested-with',
     'x-api-key',
+    # SPA apiFetch har so'rovda X-Request-ID yuboradi — preflight'da ruxsat bo'lmasa CORS "bloklandi"
+    'x-request-id',
 ]
 
 # Ensure CORS middleware handles OPTIONS preflight correctly
 CORS_PREFLIGHT_MAX_AGE = 3600
-CORS_EXPOSE_HEADERS = ['Content-Type', 'X-CSRFToken']
+CORS_EXPOSE_HEADERS = ['Content-Type', 'X-CSRFToken', 'X-Request-ID']
 
 # Additional CORS settings for better compatibility
 CORS_PREFLIGHT_MAX_AGE = 3600  # Preflight cache time (1 hour)
-CORS_EXPOSE_HEADERS = ['Content-Type', 'X-CSRFToken']  # Exposed headers
 
 # Ensure CORS middleware processes OPTIONS requests correctly
 # This is handled automatically by corsheaders, but we ensure settings are correct
