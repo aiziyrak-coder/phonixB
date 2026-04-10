@@ -207,3 +207,35 @@ class DoiRequest(models.Model):
 
     def __str__(self):
         return f"{self.author_last_name} {self.author_first_name} — {self.get_status_display()}"
+
+
+class ArticleOperatorMessage(models.Model):
+    """
+    Muallif ↔ operatorlar o‘rtasidagi chat: har bir maqola alohida thread.
+    Muallif xabari barcha operatorlarga ko‘rinadi; operator javoblari muallifga umumiy «Operator» nomi bilan chiqadi (API serializer).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    article = models.ForeignKey(
+        Article,
+        on_delete=models.CASCADE,
+        related_name='operator_messages',
+    )
+    sender = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='article_operator_messages',
+    )
+    body = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']
+        indexes = [
+            models.Index(fields=['article', 'created_at']),
+        ]
+        verbose_name = 'Maqola — operator chati xabari'
+        verbose_name_plural = 'Maqola — operator chati xabarlari'
+
+    def __str__(self):
+        return f"{self.article_id} — {self.created_at}"

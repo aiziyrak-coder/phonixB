@@ -2,6 +2,15 @@
 
 Django REST Framework backend for Phoenix Scientific Platform.
 
+## Monitoring
+
+- `GET /health/` yoki `GET /health/live/` — liveness (versiya, Python/Django haqida JSON).
+- `GET /health/ready/` — PostgreSQL + `REDIS_URL` bo‘lsa Redis (503 agar kritik tekshiruv yiqilsa).
+- `GET /metrics/` — Prometheus matn formati (`phoenix_up`, `phoenix_uptime_seconds`, `phoenix_info`). Maxfiy qilish uchun `.env` da `METRICS_SECRET` — so‘rov sarlavhasi `X-Metrics-Key`.
+- Har bir API javobida `X-Request-ID`; so‘rov loglari `phoenix.request` logger orqali (`MONITORING_LOG_REQUESTS`, `MONITORING_LOG_JSON`).
+- Sentry: `SENTRY_DSN`, ixtiyoriy `SENTRY_PROFILES_SAMPLE_RATE`, `APP_VERSION` / `GIT_REVISION` — `release` maydoni uchun.
+- Gunicorn: `gunicorn.conf.py` — access log stdout, `WEB_CONCURRENCY` bilan worker soni.
+
 ## Features
 
 - User authentication and authorization (JWT)
@@ -35,7 +44,7 @@ DEBUG=True
 DATABASE_URL=sqlite:///db.sqlite3
 CLICK_MERCHANT_ID=45730
 CLICK_SERVICE_ID=89248
-CLICK_SECRET_KEY=08ClKUoBemAxyM
+CLICK_SECRET_KEY=<REDACTED_CLICK_SECRET>
 CLICK_MERCHANT_USER_ID=72021
 ```
 

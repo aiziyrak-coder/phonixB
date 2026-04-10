@@ -17,6 +17,9 @@ from .models import Transaction
 
 logger = logging.getLogger(__name__)
 
+def _click_timeout():
+    return int(getattr(settings, 'CLICK_HTTP_TIMEOUT_SEC', 45) or 45)
+
 
 def _find_transaction_by_merchant_trans_id(merchant_trans_id):
     """
@@ -220,7 +223,7 @@ class ClickPaymentService:
         logger.info(f"Creating invoice via Click API: URL={url}, Data={data}")
         
         try:
-            response = requests.post(url, json=data, headers=headers, timeout=30)
+            response = requests.post(url, json=data, headers=headers, timeout=_click_timeout())
             logger.info(f"Click API response status: {response.status_code}, content: {response.text[:500]}")
             
             # Try to parse JSON response
@@ -305,7 +308,7 @@ class ClickPaymentService:
             'Auth': self.generate_auth_header()
         }
         
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=_click_timeout())
         return response.json()
     
     def check_payment_status(self, service_id, payment_id):
@@ -317,7 +320,7 @@ class ClickPaymentService:
             'Auth': self.generate_auth_header()
         }
         
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=_click_timeout())
         return response.json()
     
     def check_payment_status_by_mti(self, service_id, merchant_trans_id, date):
@@ -329,7 +332,7 @@ class ClickPaymentService:
             'Auth': self.generate_auth_header()
         }
         
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=_click_timeout())
         return response.json()
     
     def reverse_payment(self, service_id, payment_id):
@@ -341,7 +344,7 @@ class ClickPaymentService:
             'Auth': self.generate_auth_header()
         }
         
-        response = requests.delete(url, headers=headers)
+        response = requests.delete(url, headers=headers, timeout=_click_timeout())
         return response.json()
     
     def request_card_token(self, service_id, card_number, expire_date, temporary=1):
@@ -358,7 +361,7 @@ class ClickPaymentService:
             'temporary': temporary
         }
         
-        response = requests.post(url, json=data, headers=headers)
+        response = requests.post(url, json=data, headers=headers, timeout=_click_timeout())
         return response.json()
     
     def verify_card_token(self, service_id, card_token, sms_code):
@@ -375,7 +378,7 @@ class ClickPaymentService:
             'sms_code': sms_code
         }
         
-        response = requests.post(url, json=data, headers=headers)
+        response = requests.post(url, json=data, headers=headers, timeout=_click_timeout())
         return response.json()
     
     def pay_with_card_token(self, service_id, card_token, amount, merchant_trans_id):
@@ -393,7 +396,7 @@ class ClickPaymentService:
             'merchant_trans_id': merchant_trans_id
         }
         
-        response = requests.post(url, json=data, headers=headers)
+        response = requests.post(url, json=data, headers=headers, timeout=_click_timeout())
         return response.json()
     
     def delete_card_token(self, service_id, card_token):
@@ -405,7 +408,7 @@ class ClickPaymentService:
             'Auth': self.generate_auth_header()
         }
         
-        response = requests.delete(url, headers=headers)
+        response = requests.delete(url, headers=headers, timeout=_click_timeout())
         return response.json()
     
     def create_direct_payment_url(self, transaction, use_invoice=False):
@@ -878,24 +881,53 @@ class ClickPaymentService:
                 error_int = -1
 
             # select_for_update() faqat atomic() ichida (PostgreSQL); aks holda xatolik va Click "to'lov xatosi" ko'rsatadi
+            skip_fulfill = False
             with db_transaction.atomic():
                 locked = Transaction.objects.select_for_update().get(pk=transaction.pk)
-                if error_int == 0:
+                if error_int == 0 and locked.status == 'completed':
+                    logger.info(
+                        'Click complete idempotent: transaction %s allaqachon completed',
+                        locked.id,
+                    )
+                    transaction = locked
+                    skip_fulfill = True
+                elif error_int == 0:
                     locked.status = 'completed'
                     locked.completed_at = timezone.now()
                     locked.click_paydoc_id = data.get('click_paydoc_id', locked.click_paydoc_id or '')
                     locked.click_trans_id = click_trans_id
                     locked.error_note = ''
+                    locked.save(
+                        update_fields=['status', 'completed_at', 'click_paydoc_id', 'click_trans_id', 'error_note']
+                    )
+                    logger.info("Transaction %s status updated to '%s'", locked.id, locked.status)
+                    transaction = locked
                 else:
-                    locked.status = 'failed'
-                    locked.error_note = str(data.get('error_note', ''))[:500]
-                locked.save(
-                    update_fields=['status', 'completed_at', 'click_paydoc_id', 'click_trans_id', 'error_note']
-                )
-                logger.info("Transaction %s status updated to '%s'", locked.id, locked.status)
+                    if locked.status == 'completed':
+                        logger.warning(
+                            'Click complete: failure callback for already-completed transaction %s — ignored',
+                            locked.id,
+                        )
+                        transaction = locked
+                        skip_fulfill = True
+                    else:
+                        locked.status = 'failed'
+                        locked.error_note = str(data.get('error_note', ''))[:500]
+                        locked.save(
+                            update_fields=['status', 'completed_at', 'click_paydoc_id', 'click_trans_id', 'error_note']
+                        )
+                        logger.info("Transaction %s status updated to '%s'", locked.id, locked.status)
+                        transaction = locked
 
-            transaction = locked
-            
+            if skip_fulfill:
+                return {
+                    'click_trans_id': click_trans_id,
+                    'merchant_trans_id': str(transaction.id),
+                    'merchant_confirm_id': str(transaction.id),
+                    'error': 0,
+                    'error_note': 'Success',
+                }
+
             if error_int == 0 and getattr(transaction, 'service_type', None) == 'udk_request':
                 try:
                     from apps.udc.fulfill import fulfill_udk_request

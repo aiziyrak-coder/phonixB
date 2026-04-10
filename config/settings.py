@@ -2,6 +2,7 @@
 Django settings for Phoenix Scientific Platform
 """
 
+import logging
 import os
 from pathlib import Path
 from datetime import timedelta
@@ -31,7 +32,11 @@ elif DEBUG:
 else:
     raise ImproperlyConfigured('SECRET_KEY must be set in the environment when DEBUG=False')
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'api.ilmiyfaoliyat.uz,167.71.53.238,localhost,127.0.0.1').split(',')
+ALLOWED_HOSTS = [
+    h.strip()
+    for h in os.getenv('ALLOWED_HOSTS', 'api.ilmiyfaoliyat.uz,167.71.53.238,localhost,127.0.0.1').split(',')
+    if h.strip()
+]
 
 # Application definition
 INSTALLED_APPS = [
@@ -70,6 +75,9 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'config.monitoring_middleware.RequestMonitoringMiddleware',
+    'config.middleware.AdminLoginRateLimitMiddleware',
+    'config.middleware.ApiSecurityHeadersMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -156,7 +164,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # REST Framework
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'config.authentication.CookieAwareJWTAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
@@ -178,12 +186,26 @@ REST_FRAMEWORK = {
         'rest_framework.parsers.FormParser',
         'rest_framework.parsers.MultiPartParser',
     ),
+    'DEFAULT_THROTTLE_CLASSES': (
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': os.getenv('THROTTLE_ANON', '120/minute'),
+        'user': os.getenv('THROTTLE_USER', '600/minute'),
+        'auth': os.getenv('THROTTLE_AUTH', '20/minute'),
+        'gemini': os.getenv('THROTTLE_GEMINI', '40/hour'),
+    },
 }
+
+# JWT — productionda JWT_ACCESS_MINUTES / JWT_REFRESH_DAYS bilan qisqartirish mumkin
+_jwt_access_minutes = int(os.getenv('JWT_ACCESS_MINUTES', '1440'))  # default 24 soat
+_jwt_refresh_days = int(os.getenv('JWT_REFRESH_DAYS', '7'))
 
 # JWT Settings
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=max(5, min(_jwt_access_minutes, 60 * 24 * 30))),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=max(1, min(_jwt_refresh_days, 365))),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'UPDATE_LAST_LOGIN': True,
@@ -196,6 +218,34 @@ SIMPLE_JWT = {
     'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
     'TOKEN_TYPE_CLAIM': 'token_type',
 }
+
+# HttpOnly JWT cookies (same-site SPA → API); JSON body tokens ham qoladi (SPA mosligi)
+JWT_USE_HTTPONLY_COOKIES = os.getenv('JWT_USE_HTTPONLY_COOKIES', str(not DEBUG)).lower() in (
+    'true',
+    '1',
+    'yes',
+    'on',
+)
+JWT_ACCESS_COOKIE_NAME = os.getenv('JWT_ACCESS_COOKIE_NAME', 'access').strip() or 'access'
+JWT_REFRESH_COOKIE_NAME = os.getenv('JWT_REFRESH_COOKIE_NAME', 'refresh').strip() or 'refresh'
+JWT_COOKIE_DOMAIN = os.getenv('JWT_AUTH_COOKIE_DOMAIN', '').strip() or None
+JWT_RETURN_TOKENS_IN_JSON = os.getenv('JWT_RETURN_TOKENS_IN_JSON', 'true').lower() in ('true', '1', 'yes', 'on')
+
+# Admin login: attempts per IP per window (middleware)
+ADMIN_LOGIN_RATELIMIT_PER_IP = int(os.getenv('ADMIN_LOGIN_RATELIMIT_PER_IP', '30'))
+ADMIN_LOGIN_RATELIMIT_WINDOW_SEC = int(os.getenv('ADMIN_LOGIN_RATELIMIT_WINDOW_SEC', '900'))
+
+# Optional CSP for API responses (bo'sh = yuborilmasin)
+DJANGO_API_CSP = os.getenv('DJANGO_API_CSP', '').strip()
+
+# Request monitoring (JSON log — Loki / ELK uchun qulay)
+MONITORING_LOG_REQUESTS = os.getenv('MONITORING_LOG_REQUESTS', 'true').lower() in (
+    'true',
+    '1',
+    'yes',
+    'on',
+)
+MONITORING_LOG_JSON = os.getenv('MONITORING_LOG_JSON', 'false').lower() in ('true', '1', 'yes', 'on')
 
 # CORS Settings
 # Explicitly check for 'True' string (case-insensitive) - default to False for production
@@ -227,7 +277,6 @@ if CORS_ALLOW_ALL_ORIGINS:
     CORS_ALLOWED_ORIGINS = []
 
 # Debug logging (for troubleshooting)
-import logging
 logger = logging.getLogger(__name__)
 if not CORS_ALLOW_ALL_ORIGINS:
     logger.info(f"CORS settings: ALLOW_ALL=False, ALLOWED_ORIGINS={CORS_ALLOWED_ORIGINS}, ENV_VALUE={cors_allow_all_env}")
@@ -279,8 +328,9 @@ else:
     ]
 
 # File Upload Settings
-FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
-DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
+_upload_mb = max(1, min(int(os.getenv('MAX_UPLOAD_MB', '10')), 100))
+FILE_UPLOAD_MAX_MEMORY_SIZE = _upload_mb * 1024 * 1024
+DATA_UPLOAD_MAX_MEMORY_SIZE = _upload_mb * 1024 * 1024
 
 # Gemini AI — faqat serverda .env da o'rnating (GitHubga yozmang)
 # Bir nechta nomlar bilan kelishi mumkin (legacy): GOOGLE_API_KEY, GENAI_API_KEY
@@ -289,6 +339,15 @@ GEMINI_API_KEY = (
     or (os.getenv('GOOGLE_API_KEY') or '').strip()
     or (os.getenv('GENAI_API_KEY') or '').strip()
 )
+
+# Gemini model: .env da GEMINI_MODEL (masalan gemini-1.5-flash, gemini-2.0-flash)
+GEMINI_MODEL = (os.getenv('GEMINI_MODEL') or 'gemini-1.5-flash').strip()
+GEMINI_MAX_OUTPUT_TOKENS = int(os.getenv('GEMINI_MAX_OUTPUT_TOKENS', '8192'))
+# Antiplagiat promptiga kiritiladigan matn chegarami (belgi)
+GEMINI_PLAGIARISM_INPUT_CHARS = int(os.getenv('GEMINI_PLAGIARISM_INPUT_CHARS', '12000'))
+
+# Click API HTTP client
+CLICK_HTTP_TIMEOUT_SEC = int(os.getenv('CLICK_HTTP_TIMEOUT_SEC', '45'))
 
 # UDK: to'lov boshqaruvi (False = bepul, darhol bajariladi; True = to'lov kerak)
 UDK_PAYMENT_ENABLED = os.getenv('UDK_PAYMENT_ENABLED', 'true').lower() in ('true', '1', 'yes')
@@ -330,34 +389,66 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 
-# Logging
+# Logging — fayl: faqat DJANGO_LOG_TO_FILE=true yoki DEBUG (read-only konteynerlarda xatoliksiz)
+_log_env = (os.getenv('DJANGO_LOG_TO_FILE') or '').strip().lower()
+if _log_env in ('false', '0', 'no'):
+    _use_file_log = False
+elif _log_env in ('true', '1', 'yes'):
+    _use_file_log = True
+else:
+    _use_file_log = DEBUG
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {name} {message}',
+            'style': '{',
+        },
+    },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
-        },
-        'file': {
-            'class': 'logging.FileHandler',
-            'filename': BASE_DIR / 'logs' / 'django.log',
+            'formatter': 'verbose',
         },
     },
     'root': {
-        'handlers': ['console', 'file'],
+        'handlers': ['console'],
         'level': 'INFO',
     },
     'loggers': {
         'django': {
-            'handlers': ['console', 'file'],
+            'handlers': ['console'],
             'level': os.getenv('DJANGO_LOG_LEVEL', 'INFO'),
+            'propagate': False,
+        },
+        'phoenix.request': {
+            'handlers': ['console'],
+            'level': 'INFO',
             'propagate': False,
         },
     },
 }
 
-# Create logs directory if it doesn't exist
-os.makedirs(BASE_DIR / 'logs', exist_ok=True)
+if _use_file_log:
+    try:
+        _log_path = BASE_DIR / 'logs'
+        _log_path.mkdir(parents=True, exist_ok=True)
+        _log_file = _log_path / 'django.log'
+        LOGGING['handlers']['file'] = {
+            'class': 'logging.FileHandler',
+            'filename': str(_log_file),
+            'formatter': 'verbose',
+        }
+        LOGGING['root']['handlers'].append('file')
+        LOGGING['loggers']['django']['handlers'].append('file')
+    except OSError:
+        pass
+
+# Cookie siyosati (SPA + API — SameSite=Lax yetarli)
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SAMESITE = 'Lax'
 
 # --- Production HTTPS / cookie hardening (nginx TLS orqali) ---
 if not DEBUG:
@@ -365,6 +456,7 @@ if not DEBUG:
     CSRF_COOKIE_SECURE = True
     SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', 'True').lower() in ('true', '1', 'yes', 'on')
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    USE_X_FORWARDED_HOST = True
     SECURE_HSTS_SECONDS = int(os.getenv('SECURE_HSTS_SECONDS', '31536000'))
     SECURE_HSTS_INCLUDE_SUBDOMAINS = os.getenv('SECURE_HSTS_INCLUDE_SUBDOMAINS', 'True').lower() in ('true', '1', 'yes')
     SECURE_CONTENT_TYPE_NOSNIFF = True
@@ -382,3 +474,45 @@ if not DEBUG and not CLICK_SECRET_KEY and not any(
         'Click secret keys are empty — tolovlar ishlamasligi mumkin. .env da CLICK_SECRET_KEY yoki '
         'CLICK_SERVICE_*_SECRET_KEY ni Click merchant kabinetidan kiriting.'
     )
+
+def _sentry_before_send(event, hint):
+    """Authorization va cookie ma’lumotlarini yubormaslik."""
+    try:
+        request = event.get('request', {})
+        if isinstance(request, dict):
+            headers = request.get('headers')
+            if isinstance(headers, dict):
+                for k in list(headers.keys()):
+                    lk = str(k).lower()
+                    if lk in ('authorization', 'cookie', 'x-metrics-key', 'x-api-key'):
+                        headers[k] = '[Filtered]'
+    except Exception:
+        pass
+    return event
+
+
+_sentry_dsn = (os.getenv('SENTRY_DSN') or '').strip()
+if _sentry_dsn:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.django import DjangoIntegration
+        from sentry_sdk.integrations.logging import LoggingIntegration
+
+        _sentry_kwargs = dict(
+            dsn=_sentry_dsn,
+            integrations=[
+                DjangoIntegration(),
+                LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
+            ],
+            send_default_pii=False,
+            traces_sample_rate=float(os.getenv('SENTRY_TRACES_SAMPLE_RATE', '0.05')),
+            environment=os.getenv('SENTRY_ENVIRONMENT', 'production' if not DEBUG else 'development'),
+            release=os.getenv('APP_VERSION') or os.getenv('GIT_REVISION') or None,
+            before_send=_sentry_before_send,
+        )
+        _prof = float(os.getenv('SENTRY_PROFILES_SAMPLE_RATE', '0') or '0')
+        if _prof > 0:
+            _sentry_kwargs['profiles_sample_rate'] = _prof
+        sentry_sdk.init(**_sentry_kwargs)
+    except ImportError:
+        logger.warning('SENTRY_DSN o‘rnatilgan, lekin sentry-sdk o‘rnatilmagan (pip install sentry-sdk).')

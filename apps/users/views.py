@@ -1,10 +1,12 @@
 from rest_framework import viewsets, status, permissions
-from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model
-from django.views.decorators.csrf import csrf_exempt
+from rest_framework.views import APIView
+from rest_framework.throttling import ScopedRateThrottle
+from config.jwt_cookies import attach_jwt_cookies, clear_jwt_cookies
 from django.db import DatabaseError
 from django.db.models import Count, Q, Sum
 from rest_framework.exceptions import ParseError
@@ -87,6 +89,27 @@ class UserViewSet(viewsets.ModelViewSet):
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated], url_path='privacy-export')
+    def privacy_export(self, request):
+        """Shaxsiy ma'lumotlar xulosasi (GDPR uslubida — to'liq fayl eksporti emas)."""
+        u = request.user
+        articles_n = Article.objects.filter(author=u).count()
+        tx_n = Transaction.objects.filter(user=u).count()
+        return Response(
+            {
+                'user_id': str(u.id),
+                'phone': getattr(u, 'phone', None),
+                'email': getattr(u, 'email', None) or '',
+                'role': getattr(u, 'role', None),
+                'date_joined': u.date_joined.isoformat() if getattr(u, 'date_joined', None) else None,
+                'counts': {
+                    'articles': articles_n,
+                    'transactions': tx_n,
+                },
+                'note': "To'liq ma'lumotnoma uchun administratorga murojaat qiling.",
+            }
+        )
 
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated], url_path='archive')
     def archive(self, request):
@@ -420,11 +443,8 @@ class UserViewSet(viewsets.ModelViewSet):
         })
 
 
-@api_view(['POST'])
-@permission_classes([AllowAny])
-@csrf_exempt
-def register(request):
-    """Register a new user"""
+def register_impl(request):
+    """Register a new user (implementation)."""
     import logging
     import json
     logger = logging.getLogger(__name__)
@@ -465,11 +485,17 @@ def register(request):
                 user = serializer.save()
                 refresh = RefreshToken.for_user(user)
                 logger.info(f"✅ User registered successfully: {user.phone}, {user.email}")
-                return Response({
+                body = {
                     'user': UserSerializer(user, context={'request': request}).data,
                     'refresh': str(refresh),
                     'access': str(refresh.access_token),
-                }, status=status.HTTP_201_CREATED)
+                }
+                if not getattr(settings, 'JWT_RETURN_TOKENS_IN_JSON', True):
+                    body = {'user': body['user']}
+                resp = Response(body, status=status.HTTP_201_CREATED)
+                if getattr(settings, 'JWT_USE_HTTPONLY_COOKIES', False):
+                    attach_jwt_cookies(resp, str(refresh.access_token), str(refresh))
+                return resp
             except Exception as db_error:
                 import traceback
                 from django.db import IntegrityError
@@ -513,11 +539,8 @@ def register(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@api_view(['POST'])
-@permission_classes([AllowAny])
-@csrf_exempt
-def login(request):
-    """Login user"""
+def login_impl(request):
+    """Login user (implementation)."""
     import logging
     logger = logging.getLogger(__name__)
     
@@ -563,11 +586,17 @@ def login(request):
             user = serializer.validated_data['user']
             refresh = RefreshToken.for_user(user)
             logger.info("Login successful for user phone ending: %s", str(user.phone)[-4:])
-            return Response({
+            body = {
                 'user': UserSerializer(user, context={'request': request}).data,
                 'refresh': str(refresh),
                 'access': str(refresh.access_token),
-            })
+            }
+            if not getattr(settings, 'JWT_RETURN_TOKENS_IN_JSON', True):
+                body = {'user': body['user']}
+            resp = Response(body)
+            if getattr(settings, 'JWT_USE_HTTPONLY_COOKIES', False):
+                attach_jwt_cookies(resp, str(refresh.access_token), str(refresh))
+            return resp
         logger.warning("Login validation failed (bad credentials or format)")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
             
@@ -586,3 +615,44 @@ def login(request):
         return Response({
             'non_field_errors': ['Tizimga kirishda xatolik yuz berdi. Iltimos, qayta urinib ko\'ring.'],
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class LoginView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'auth'
+
+    def post(self, request):
+        return login_impl(request)
+
+
+class RegisterView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'auth'
+
+    def post(self, request):
+        return register_impl(request)
+
+
+class LogoutView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        refresh = None
+        if hasattr(request, 'data') and request.data:
+            refresh = request.data.get('refresh')
+        if not refresh:
+            refresh = request.COOKIES.get(getattr(settings, 'JWT_REFRESH_COOKIE_NAME', 'refresh'))
+        if refresh:
+            try:
+                tok = RefreshToken(refresh)
+                tok.blacklist()
+            except Exception:
+                pass
+        resp = Response({'detail': 'Sessiya yakunlandi.'})
+        clear_jwt_cookies(resp)
+        return resp

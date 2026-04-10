@@ -1,0 +1,10 @@
+__pycache__
+*.pyc
+.env
+.venv
+venv
+media
+logs
+db.sqlite3
+htmlcov
+.pytest_cache

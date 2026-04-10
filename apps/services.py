@@ -25,6 +25,37 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _parse_json_from_llm_text(result_text: str):
+    """
+    Gemini ba'zan ```json ... ``` yoki matn orasiga JSON qo'shib qaytaradi.
+    """
+    if not result_text or not str(result_text).strip():
+        return None
+    s = str(result_text).strip()
+    if '```' in s:
+        for part in s.split('```'):
+            chunk = part.strip()
+            if chunk.lower().startswith('json'):
+                chunk = chunk[4:].lstrip()
+            if chunk.startswith('{'):
+                try:
+                    return json.loads(chunk)
+                except json.JSONDecodeError:
+                    continue
+    try:
+        return json.loads(s)
+    except json.JSONDecodeError:
+        pass
+    start = s.find('{')
+    end = s.rfind('}')
+    if start >= 0 and end > start:
+        try:
+            return json.loads(s[start : end + 1])
+        except json.JSONDecodeError:
+            pass
+    return None
+
+
 def _extract_docx_text_via_zip(file_path: str) -> str:
     """DOCX is a ZIP of XML; read word/document.xml without treating the whole file as plain text."""
     import zipfile
@@ -83,21 +114,7 @@ def extract_plain_text_from_file(file_path: str) -> str:
                 logger.error(f'Error reading TXT {file_path}: {e}')
                 return ''
 
-        # PDF
-        try:
-            import PyPDF2
-            with open(file_path, 'rb') as file:
-                pdf_reader = PyPDF2.PdfReader(file)
-                text = ''
-                for page in pdf_reader.pages:
-                    page_text = page.extract_text()
-                    if page_text:
-                        text += page_text + '\n'
-                if text.strip():
-                    return text.strip()
-        except Exception as e:
-            logger.debug(f'PyPDF2 extraction failed: {e}')
-
+        # PDF — avval pdfplumber (sifat yaxshiroq), keyin PyPDF2
         try:
             import pdfplumber
             text = ''
@@ -112,6 +129,20 @@ def extract_plain_text_from_file(file_path: str) -> str:
             logger.debug('pdfplumber not installed')
         except Exception as e:
             logger.debug(f'pdfplumber failed: {e}')
+
+        try:
+            import PyPDF2
+            with open(file_path, 'rb') as file:
+                pdf_reader = PyPDF2.PdfReader(file)
+                text = ''
+                for page in pdf_reader.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text += page_text + '\n'
+                if text.strip():
+                    return text.strip()
+        except Exception as e:
+            logger.debug(f'PyPDF2 extraction failed: {e}')
 
         if ext in ('.doc',):
             return ''
@@ -132,21 +163,53 @@ class GeminiService:
     
     def __init__(self):
         self.api_key = (getattr(settings, "GEMINI_API_KEY", "") or "").strip()
+        self.model_name = (getattr(settings, "GEMINI_MODEL", None) or "gemini-1.5-flash").strip() or "gemini-1.5-flash"
+        self.max_output_tokens = int(getattr(settings, "GEMINI_MAX_OUTPUT_TOKENS", 8192) or 8192)
+        self.plagiarism_input_chars = int(getattr(settings, "GEMINI_PLAGIARISM_INPUT_CHARS", 12000) or 12000)
         if not self.api_key:
             logger.warning("GEMINI_API_KEY is not set; Gemini deep analysis will be skipped (heuristic-only)")
         if USE_NEW_GENAI:
-            # New google.genai package
             self.client = genai.Client(api_key=self.api_key) if self.api_key else None
-            self.model_name = 'gemini-pro'
+            self.model = None
         else:
-            # Deprecated google.generativeai package
+            self.client = None
             if self.api_key:
                 genai.configure(api_key=self.api_key)
-                self.model = genai.GenerativeModel('gemini-pro')
+                self.model = genai.GenerativeModel(self.model_name)
             else:
                 self.model = None
-            self.client = None
-    
+
+    def _generate_text(self, prompt: str) -> str | None:
+        """Bitta LLM chaqiruvi — ikkala SDK uchun."""
+        if not self.api_key:
+            return None
+        try:
+            if USE_NEW_GENAI:
+                if not self.client:
+                    return None
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                )
+                if hasattr(response, "text") and response.text:
+                    return response.text.strip()
+                return str(response).strip() if response is not None else None
+            if not self.model:
+                return None
+            import google.generativeai as genai_mod
+
+            gen_cfg = genai_mod.GenerationConfig(
+                temperature=0.25,
+                max_output_tokens=min(self.max_output_tokens, 8192),
+            )
+            response = self.model.generate_content(prompt, generation_config=gen_cfg)
+            if not response or not getattr(response, "text", None):
+                return None
+            return response.text.strip()
+        except Exception as e:
+            logger.error("Gemini generate_content failed: %s", e, exc_info=True)
+            return None
+
     def generate_abstract_and_keywords(self, article_text):
         """Generate abstract and keywords from article text"""
         try:
@@ -154,7 +217,7 @@ class GeminiService:
             Ushbu ilmiy maqolaning matni asosida unga mos annotatsiya (taxminan 50-70 so'z) 
             va 3-5 ta kalit so'zlar generatsiya qil. 
             
-            Matn: {article_text}
+            Matn: {article_text[:20000]}
             
             JSON formatida javob ber:
             {{
@@ -162,21 +225,12 @@ class GeminiService:
                 "keywords": ["kalit so'z 1", "kalit so'z 2", ...]
             }}
             """
-            
-            if USE_NEW_GENAI:
-                # New API
-                response = self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=prompt
-                )
-                result_text = response.text if hasattr(response, 'text') else str(response)
-            else:
-                # Deprecated API
-                response = self.model.generate_content(prompt)
-                result_text = response.text
-            
-            result = json.loads(result_text)
-            
+            result_text = self._generate_text(prompt)
+            if not result_text:
+                return {'abstract': '', 'keywords': []}
+            result = _parse_json_from_llm_text(result_text)
+            if not isinstance(result, dict):
+                return {'abstract': '', 'keywords': []}
             return {
                 'abstract': result.get('abstract', ''),
                 'keywords': result.get('keywords', [])
@@ -191,22 +245,12 @@ class GeminiService:
             prompt = f"""
             Quyidagi matnni ilmiy uslubda, ma'nosini saqlagan holda qayta yozib ber (rephrasing).
             
-            Matn: "{text}"
+            Matn: "{text[:15000]}"
             
             Faqat qayta yozilgan matnni ber, boshqa hech qanday izoh qo'sma.
             """
-            
-            if USE_NEW_GENAI:
-                response = self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=prompt
-                )
-                result_text = response.text if hasattr(response, 'text') else str(response)
-            else:
-                response = self.model.generate_content(prompt)
-                result_text = response.text
-            
-            return result_text.strip()
+            out = self._generate_text(prompt)
+            return (out or text).strip()
         except Exception as e:
             logger.error(f"Error rephrasing text: {e}", exc_info=True)
             return text
@@ -218,20 +262,10 @@ class GeminiService:
             Quyidagi adabiyotlar ro'yxatini {style} standartiga muvofiq formatlab ber.
             Har bir manbani alohida qatordan yoz.
             
-            {references}
+            {str(references)[:20000]}
             """
-            
-            if USE_NEW_GENAI:
-                response = self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=prompt
-                )
-                result_text = response.text if hasattr(response, 'text') else str(response)
-            else:
-                response = self.model.generate_content(prompt)
-                result_text = response.text
-            
-            return result_text.strip()
+            out = self._generate_text(prompt)
+            return (out or references).strip() if isinstance(references, str) else (out or str(references)).strip()
         except Exception as e:
             logger.error(f"Error formatting references: {e}", exc_info=True)
             return references
@@ -239,22 +273,13 @@ class GeminiService:
     def transliterate_text(self, text, direction='cyr_to_lat'):
         """Transliterate text between Cyrillic and Latin"""
         try:
+            snippet = text[:12000] if text else ''
             if direction == 'cyr_to_lat':
-                prompt = f'Quyidagi kirill alifbosidagi matnni lotin alifbosiga o\'girib ber: "{text}"'
+                prompt = f'Quyidagi kirill alifbosidagi matnni lotin alifbosiga o\'girib ber: "{snippet}"'
             else:
-                prompt = f'Quyidagi lotin alifbosidagi matnni kirill alifbosiga o\'girib ber: "{text}"'
-            
-            if USE_NEW_GENAI:
-                response = self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=prompt
-                )
-                result_text = response.text if hasattr(response, 'text') else str(response)
-            else:
-                response = self.model.generate_content(prompt)
-                result_text = response.text
-            
-            return result_text.strip()
+                prompt = f'Quyidagi lotin alifbosidagi matnni kirill alifbosiga o\'girib ber: "{snippet}"'
+            out = self._generate_text(prompt)
+            return (out or text).strip()
         except Exception as e:
             logger.error(f"Error transliterating text: {e}", exc_info=True)
             return text
@@ -330,7 +355,10 @@ class GeminiService:
                     'sentence_length_variance': 0, 'readability_score': 0,
                     'passive_voice_ratio': 0, 'transition_density': 0
                 },
-                'recommendations': []
+                'recommendations': [],
+                'analysis_mode': 'insufficient_text',
+                'llm_model': None,
+                'disclaimer_uz': 'Tekshirish uchun matn yetarli emas (kamida ~50 belgi).',
             }
         }
 
@@ -462,14 +490,15 @@ class GeminiService:
         """Run deep Gemini AI analysis with professional prompt."""
         if not self.api_key:
             return None
-        try:
-            prompt = f"""You are an advanced academic integrity analysis engine, combining the capabilities of Turnitin, Copyleaks, GPTZero, and Originality.ai.
+        lim = max(4000, min(int(self.plagiarism_input_chars), 100_000))
+        sample = (text or '')[:lim]
+        prompt = f"""You are an advanced academic integrity analysis engine, combining the capabilities of Turnitin, Copyleaks, GPTZero, and Originality.ai.
 
 Analyze the following academic text with extreme precision. Provide a comprehensive JSON report.
 
-TEXT TO ANALYZE (first 8000 chars):
+TEXT TO ANALYZE (first {lim} characters):
 \"\"\"
-{text[:8000]}
+{sample}
 \"\"\"
 
 Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
@@ -504,32 +533,21 @@ Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
 }}
 IMPORTANT: For "sources", do a deep analysis: identify specific phrases or sentences that look copied. For each, suggest a concrete search URL (Google Scholar, Google, CyberLeninka, eLibrary, ResearchGate, etc.) using the suspicious phrase as the search query (URL-encoded). Provide 0-8 sources. If no clear plagiarism, return empty sources array."""
 
-            if USE_NEW_GENAI:
-                if not self.client:
-                    return None
-                response = self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=prompt
-                )
-                result_text = response.text if hasattr(response, 'text') else str(response)
-            else:
-                if not self.model:
-                    return None
-                response = self.model.generate_content(prompt)
-                result_text = response.text
-
-            import re
-            json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
-            if json_match:
-                result = json.loads(json_match.group())
-                return result
-            else:
-                logger.warning("Gemini returned non-JSON for plagiarism deep analysis")
-                return None
-
-        except Exception as e:
-            logger.error(f"Gemini deep analysis failed: {e}", exc_info=True)
-            return None
+        for attempt in range(2):
+            try:
+                result_text = self._generate_text(prompt)
+                if not result_text:
+                    logger.warning("Gemini plagiarism: empty response (attempt %s)", attempt + 1)
+                    continue
+                result = _parse_json_from_llm_text(result_text)
+                if isinstance(result, dict) and any(
+                    k in result for k in ('plagiarism_percentage', 'ai_content_percentage', 'originality')
+                ):
+                    return result
+                logger.warning("Gemini plagiarism: invalid JSON structure (attempt %s)", attempt + 1)
+            except Exception as e:
+                logger.error("Gemini deep analysis attempt failed: %s", e, exc_info=True)
+        return None
 
     def _merge_analysis(self, heuristic, gemini, text, sections):
         """Merge heuristic + Gemini results with weighted ensemble."""
@@ -581,6 +599,12 @@ IMPORTANT: For "sources", do a deep analysis: identify specific phrases or sente
                     'note': gs.get('note', ''),
                 })
             confidence = 85
+            analysis_mode = 'hybrid'
+            llm_model = self.model_name
+            disclaimer_uz = (
+                'Natija lokal heuristic va LLM (Gemini) tahlili aralashmasi; rasmiy plagiat/AI qidiruvi o‘rnini bosmaydi. '
+                'Yakuniy qaror inson eksperti uchun yo‘riqnoma sifatida qabul qilinsin.'
+            )
         else:
             # Heuristic only
             plag = heuristic['plagiarism_score']
@@ -597,6 +621,12 @@ IMPORTANT: For "sources", do a deep analysis: identify specific phrases or sente
             merged_sections = heuristic['sections']
             recommendations = []
             confidence = 45
+            analysis_mode = 'heuristic_only'
+            llm_model = None
+            disclaimer_uz = (
+                'GEMINI_API_KEY yo‘q yoki LLM javob bermadi — faqat lokal heuristic tahlil ishlatildi. '
+                'Aniqroq baho uchun serverda Gemini kalitini sozlang.'
+            )
 
         plag = max(0, min(100, plag))
         ai = max(0, min(100, ai))
@@ -637,6 +667,9 @@ IMPORTANT: For "sources", do a deep analysis: identify specific phrases or sente
                 'stylometric': heuristic['stylometric'],
                 'recommendations': recommendations,
                 'sources': sources,
+                'analysis_mode': analysis_mode,
+                'llm_model': llm_model,
+                'disclaimer_uz': disclaimer_uz,
             },
             'sources': sources,
         }
@@ -666,19 +699,12 @@ RUXSAT ETILGAN UDK RO'YXATI:
 Javobni faqat quyidagi JSON formatida bering, boshqa matn yozma:
 {{"udk_code": "tanlangan aniq kod", "udk_description": "qisqa tavsif (o'zbekcha yoki ruscha)"}}
 """
-            if USE_NEW_GENAI:
-                response = self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=prompt
-                )
-                result_text = response.text if hasattr(response, 'text') else str(response)
-            else:
-                response = self.model.generate_content(prompt)
-                result_text = response.text
-            text = (result_text or '').strip()
-            if '```' in text:
-                text = text.split('```')[1].replace('json', '').strip()
-            data = json.loads(text)
+            raw = self._generate_text(prompt)
+            if not raw:
+                return None
+            data = _parse_json_from_llm_text(raw)
+            if not isinstance(data, dict):
+                return None
             code = (data.get('udk_code') or '').strip()
             desc = (data.get('udk_description') or '').strip()[:500]
             if code:

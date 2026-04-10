@@ -1,6 +1,6 @@
 import json
 from rest_framework import serializers
-from .models import Article, ArticleVersion, ActivityLog, DoiRequest, ArticleSampleRequest
+from .models import Article, ArticleVersion, ActivityLog, DoiRequest, ArticleSampleRequest, ArticleOperatorMessage
 from apps.users.serializers import UserSerializer
 from apps.journals.models import Journal
 
@@ -509,3 +509,31 @@ class ArticleSampleRequestSerializer(serializers.ModelSerializer):
 
     def get_author_short(self, obj):
         return f"{obj.author_last_name} {obj.author_first_name}"
+
+
+class ArticleOperatorMessageSerializer(serializers.ModelSerializer):
+    """Muallifga operator ismi yashirin; operatorlar o‘rtasida kim yozgani ko‘rinadi."""
+
+    display_name = serializers.SerializerMethodField()
+    is_from_author = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ArticleOperatorMessage
+        fields = ('id', 'body', 'created_at', 'display_name', 'is_from_author')
+        read_only_fields = fields
+
+    def get_is_from_author(self, obj):
+        return getattr(obj.sender, 'role', None) == 'author'
+
+    def get_display_name(self, obj):
+        request = self.context.get('request')
+        viewer = request.user if request and request.user.is_authenticated else None
+        sender = obj.sender
+        s_role = (getattr(sender, 'role', '') or '').lower()
+        if s_role == 'author':
+            name = (sender.get_full_name() or '').strip()
+            return name or (getattr(sender, 'email', None) or getattr(sender, 'phone', None) or 'Muallif')
+        if viewer and (getattr(viewer, 'role', '') or '').lower() == 'author':
+            return 'Operator'
+        name = (sender.get_full_name() or '').strip()
+        return name or 'Operator'

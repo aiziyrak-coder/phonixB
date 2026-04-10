@@ -1,3 +1,4 @@
+from django.db.models import Max
 from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
@@ -8,17 +9,29 @@ from .models import (
     ActivityLog,
     ArticleSampleRequest,
     DoiRequest,
+    ArticleOperatorMessage,
     ARTICLE_SAMPLE_PRICE_QUYI,
     ARTICLE_SAMPLE_PRICE_ORTA,
     ARTICLE_SAMPLE_PRICE_YUQORI,
 )
-from .serializers import ArticleSerializer, ArticleListSerializer, CreateArticleSerializer, ArticleVersionSerializer, PublicArticleShareSerializer, DoiRequestSerializer, ArticleSampleRequestSerializer
+from .serializers import (
+    ArticleSerializer,
+    ArticleListSerializer,
+    CreateArticleSerializer,
+    ArticleVersionSerializer,
+    PublicArticleShareSerializer,
+    DoiRequestSerializer,
+    ArticleSampleRequestSerializer,
+    ArticleOperatorMessageSerializer,
+)
 from apps.notifications.models import Notification
+from apps.users.models import User
 from apps.payments.models import Transaction
 from apps.journals.models import Journal
 from django.conf import settings
 from django.utils import timezone
 from apps.services import get_gemini_service, extract_plain_text_from_file
+from config.throttles import PlagiarismActionThrottle
 import logging
 import os
 import uuid
@@ -73,6 +86,11 @@ class ArticleViewSet(viewsets.ModelViewSet):
     serializer_class = ArticleSerializer
     permission_classes = [IsAuthenticated]
 
+    def get_throttles(self):
+        if getattr(self, 'action', None) == 'check_plagiarism':
+            return [PlagiarismActionThrottle()]
+        return super().get_throttles()
+
     def list(self, request, *args, **kwargs):
         """List articles with defensive error handling to avoid 500."""
         try:
@@ -105,6 +123,9 @@ class ArticleViewSet(viewsets.ModelViewSet):
         elif role == 'reviewer':
             # Taqrizchi: taqriz bosqichidagi maqolalar (frontend ham shu statusni filtrlaydi)
             return base_queryset.filter(status='QabulQilingan')
+        elif role == 'operator':
+            # Operator: muallif bilan maqola bo‘yicha chat va yordam
+            return base_queryset.all()
         return Article.objects.none()
     
     def get_serializer_class(self):
@@ -731,6 +752,88 @@ class ArticleViewSet(viewsets.ModelViewSet):
                 {'error': 'Plagiat tekshiruvida xatolik yuz berdi. Iltimos, qayta urinib ko\'ring.', 'details': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+    @action(detail=True, methods=['get', 'post'], url_path='operator-chat')
+    def operator_chat(self, request, pk=None):
+        """Muallif ↔ operatorlar: har bir maqola alohida thread. GET ro‘yxat, POST yangi xabar."""
+        article = self.get_object()
+        user = request.user
+        role = (getattr(user, 'role', '') or '').lower()
+        is_author = article.author_id == user.id
+        is_staff_side = role in ('operator', 'super_admin')
+        if not is_author and not is_staff_side:
+            return Response({'detail': 'Bu chatga kirish huquqingiz yo‘q.'}, status=status.HTTP_403_FORBIDDEN)
+
+        if request.method == 'GET':
+            qs = article.operator_messages.select_related('sender').all()
+            ser = ArticleOperatorMessageSerializer(qs, many=True, context={'request': request})
+            return Response(ser.data)
+
+        body = (request.data.get('body') if isinstance(request.data, dict) else None) or ''
+        body = str(body).strip()
+        if not body:
+            return Response({'detail': 'Xabar matni bo‘sh bo‘lmasligi kerak.'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(body) > 10000:
+            return Response({'detail': 'Xabar juda uzun (maksimum 10000 belgi).'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if article.author_id == user.id:
+            author_post = True
+        elif role in ('operator', 'super_admin'):
+            author_post = False
+        else:
+            return Response({'detail': 'Xabar yuborish huquqingiz yo‘q.'}, status=status.HTTP_403_FORBIDDEN)
+
+        msg = ArticleOperatorMessage.objects.create(article=article, sender=user, body=body)
+        preview = (body[:240] + '…') if len(body) > 240 else body
+        chat_link = f'/articles/{article.id}'
+        try:
+            if author_post:
+                for op in User.objects.filter(role='operator', is_active=True):
+                    Notification.notify(
+                        user=op,
+                        title='Muallifdan chat xabari',
+                        message=f'«{article.title[:120]}» — {preview}',
+                        notification_type='article',
+                        link=chat_link,
+                        metadata={'article_id': str(article.id), 'kind': 'author_operator_chat'},
+                    )
+            else:
+                Notification.notify(
+                    user=article.author,
+                    title='Operator javobi',
+                    message=f'«{article.title[:120]}» — {preview}',
+                    notification_type='article',
+                    link=chat_link,
+                    metadata={'article_id': str(article.id), 'kind': 'author_operator_chat'},
+                )
+        except Exception as e:
+            logger.warning('operator_chat notification failed: %s', e)
+
+        out = ArticleOperatorMessageSerializer(msg, context={'request': request})
+        return Response(out.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['get'], url_path='operator-chat-inbox')
+    def operator_chat_inbox(self, request):
+        """So‘nggi faol chatlar: oxirgi xabar vaqti bo‘yicha (operator / super_admin)."""
+        role = (getattr(request.user, 'role', '') or '').lower()
+        if role not in ('operator', 'super_admin'):
+            return Response({'detail': 'Ruxsat yo‘q.'}, status=status.HTTP_403_FORBIDDEN)
+        qs = (
+            Article.objects.annotate(last_msg_at=Max('operator_messages__created_at'))
+            .filter(last_msg_at__isnull=False)
+            .select_related('author', 'journal')
+            .order_by('-last_msg_at')[:100]
+        )
+        data = []
+        for a in qs:
+            data.append({
+                'id': str(a.id),
+                'title': a.title,
+                'author_name': a.author.get_full_name() if a.author_id else '',
+                'journal_name': getattr(a.journal, 'name', '') or '',
+                'last_message_at': a.last_msg_at.isoformat() if a.last_msg_at else None,
+            })
+        return Response(data)
 
 
 @api_view(['GET'])

@@ -5,9 +5,14 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
-from rest_framework_simplejwt.views import TokenRefreshView
+from .jwt_views import CookieTokenRefreshView
+from .health import health_live, health_ready, metrics_prometheus
 
 urlpatterns = [
+    path('health/', health_live),
+    path('health/live/', health_live),
+    path('health/ready/', health_ready),
+    path('metrics/', metrics_prometheus),
     # Admin
     path('admin/', admin.site.urls),
     
@@ -22,7 +27,7 @@ urlpatterns = [
     path('api/v1/udc/', include('apps.udc.urls')),
     
     # JWT token refresh
-    path('api/v1/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('api/v1/token/refresh/', CookieTokenRefreshView.as_view(), name='token_refresh'),
 ]
 
 # Serve media files in development

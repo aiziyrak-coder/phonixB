@@ -99,7 +99,7 @@ nano .env
 
 ```env
 # MUVAQQAT - Click'dan olgan to'g'ri kalitni kiriting!
-CLICK_SERVICE_82154_SECRET_KEY=XZC6u3JBBh
+CLICK_SERVICE_82154_SECRET_KEY=<CLICK_82154_SECRET>
 ```
 
 **⚠️ Eslatma:** Bu muvaqqat kalit. Click'dan olgan **to'g'ri kalitni** kiriting!

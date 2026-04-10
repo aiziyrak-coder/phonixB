@@ -114,10 +114,10 @@ nano .env
 
 ```env
 # Click Service 82154 secret key (MUVAQQAT - Click'dan olgan to'g'ri kalitni kiriting!)
-CLICK_SERVICE_82154_SECRET_KEY=XZC6u3JBBh
+CLICK_SERVICE_82154_SECRET_KEY=<CLICK_82154_SECRET>
 ```
 
-**⚠️ MUHIM:** `XZC6u3JBBh` - bu muvaqqat kalit. Click'dan olgan **to'g'ri kalitni** kiriting!
+**⚠️ MUHIM:** `<CLICK_82154_SECRET>` - bu muvaqqat kalit. Click'dan olgan **to'g'ri kalitni** kiriting!
 
 **Saqlash:** `Ctrl+O`, `Enter`, `Ctrl+X`
 

@@ -3,11 +3,11 @@
 ## ✅ CLICK'DAN BERILGAN KALITLAR
 
 ### **Service 82154 (Ilmiyfaoliyat.uz):**
-- SECRET_KEY: `XZC6u3JBBh`
+- SECRET_KEY: `<CLICK_82154_SECRET>`
 - MERCHANT_USER_ID: `63536`
 
 ### **Service 82155 (Phoenix publication):**
-- SECRET_KEY: `icHbYQnMBx`
+- SECRET_KEY: `<CLICK_82155_SECRET>`
 - MERCHANT_USER_ID: `64985`
 
 ---
@@ -57,10 +57,10 @@ nano .env
 ```env
 # Click Service-specific secret keys (Click'dan berilgan kalitlar)
 # Service 82154 uchun (Ilmiyfaoliyat.uz)
-CLICK_SERVICE_82154_SECRET_KEY=XZC6u3JBBh
+CLICK_SERVICE_82154_SECRET_KEY=<CLICK_82154_SECRET>
 CLICK_SERVICE_82154_MERCHANT_USER_ID=63536
 # Service 82155 uchun (Phoenix publication)
-CLICK_SERVICE_82155_SECRET_KEY=icHbYQnMBx
+CLICK_SERVICE_82155_SECRET_KEY=<CLICK_82155_SECRET>
 CLICK_SERVICE_82155_MERCHANT_USER_ID=64985
 ```
 
@@ -107,9 +107,9 @@ deactivate
 
 **Ko'rinishi kerak:**
 ```
-Service 82154 (Ilmiyfaoliyat.uz): XZC6u3JBBh...
-Service 82155 (Phoenix publication): icHbYQnMBx...
-Service 89248 (PHOENIX): 08ClKUoBemAxyM...
+Service 82154 (Ilmiyfaoliyat.uz): <CLICK_82154_SECRET>...
+Service 82155 (Phoenix publication): <CLICK_82155_SECRET>...
+Service 89248 (PHOENIX): <REDACTED_CLICK_SECRET>...
 ```
 
 ---
@@ -118,9 +118,9 @@ Service 89248 (PHOENIX): 08ClKUoBemAxyM...
 
 Endi backend **3 ta service** uchun ham kalitlarni biladi:
 
-- ✅ **Service 82154** (Ilmiyfaoliyat.uz) → `XZC6u3JBBh`
-- ✅ **Service 82155** (Phoenix publication) → `icHbYQnMBx`
-- ✅ **Service 89248** (PHOENIX) → `08ClKUoBemAxyM`
+- ✅ **Service 82154** (Ilmiyfaoliyat.uz) → `<CLICK_82154_SECRET>`
+- ✅ **Service 82155** (Phoenix publication) → `<CLICK_82155_SECRET>`
+- ✅ **Service 89248** (PHOENIX) → `<REDACTED_CLICK_SECRET>`
 
 **Click'dan qaysi service_id bilan callback kelsa ham, to'g'ri secret key ishlatiladi!**
 
