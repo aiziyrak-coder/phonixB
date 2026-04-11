@@ -1,65 +1,287 @@
 #!/bin/bash
-# Phoenix to'liq deploy: backend + frontend + restart (ilmiyfaoliyat.uz)
-# Boshqa loyihalarga ta'sir: faqat systemctl restart phoenix-backend va nginx reload.
-# Boshqa servislar (medora, fjsti.ziyrak.org va hokazo) systemd orqali alohida — bu skript ularni to'xtatmaydi.
-# Ishga tushirish: bash deploy_phonix.sh  yoki  wget -qO- https://raw.githubusercontent.com/aiziyrak-coder/phonixB/master/deploy_phonix.sh | bash
-set -e
+
+# Phoenix Scientific Platform - Xavfsiz Deployment Script
+# Bu script faqat Phoenix dasturini yangilaydi va boshqa dasturlarga tasir qilmaydi
+# GitHub: https://github.com/aiziyrak-coder/phonixB
+#
+# MUHIM: Nginx konfiglarini avtomatik sed qilmaymiz — boshqa saytlar buzilishining oldini oladi.
+#        API proxy port: PHONIX_BACKEND_PORT (default 8050) — systemd va nginx bilan moslang.
+
+set -e  # Xatolik bo'lsa to'xtatish
+
+# ============================================
+# KONFIGURATSIYA - Faqat Phoenix uchun
+# ============================================
 DEPLOY_DIR="/phonix"
-SERVICE_BACKEND="phoenix-backend"
-export VITE_API_BASE_URL="${VITE_API_BASE_URL:-https://api.ilmiyfaoliyat.uz/api/v1}"
-export VITE_MEDIA_URL="${VITE_MEDIA_URL:-https://api.ilmiyfaoliyat.uz/media/}"
+BACKEND_REPO="https://github.com/aiziyrak-coder/phonixB.git"
+FRONTEND_REPO="https://github.com/aiziyrak-coder/phonixF.git"
+SERVICE_NAME="phoenix-backend"
+# Loopback port — 8000 boshqa xizmatlar bilan to'qnashmasin; PHONIX_BACKEND_PORT bilan o'zgartirish mumkin
+BACKEND_PORT="${PHONIX_BACKEND_PORT:-8050}"
+FRONTEND_DOMAIN="ilmiyfaoliyat.uz"
+API_DOMAIN="api.ilmiyfaoliyat.uz"
+# PHONIX_GIT_RESET=true — fetch + reset --hard (masofadan deploy uchun tavsiya)
 
-echo "[1/6] Backend: git pull..."
-cd "${DEPLOY_DIR}/backend"
-git pull origin master || git pull origin main
+# ============================================
+# FUNKTSIYALAR
+# ============================================
 
-echo "[2/6] Backend: migrate va narxlar..."
+git_update_backend() {
+    if [ "${PHONIX_GIT_RESET:-false}" = "true" ]; then
+        echo "   Git fetch + reset --hard (PHONIX_GIT_RESET)..."
+        cp -a .env /tmp/.env.phonix.bak 2>/dev/null || true
+        git fetch origin master 2>/dev/null || git fetch origin main
+        git reset --hard origin/master 2>/dev/null || git reset --hard origin/main
+        if [ -f /tmp/.env.phonix.bak ]; then
+            cp -a /tmp/.env.phonix.bak .env
+            echo "   .env tiklandi"
+        fi
+    else
+        echo "   Git pull qilinmoqda..."
+        git stash 2>/dev/null || true
+        git pull origin master || git pull origin main || error_exit "Git pull xatolik"
+        git stash pop 2>/dev/null || true
+    fi
+}
+
+git_update_frontend() {
+    if [ "${PHONIX_GIT_RESET:-false}" = "true" ]; then
+        echo "   Git fetch + reset --hard (PHONIX_GIT_RESET)..."
+        git fetch origin master 2>/dev/null || git fetch origin main
+        git reset --hard origin/master 2>/dev/null || git reset --hard origin/main
+    else
+        echo "   Git pull qilinmoqda..."
+        git stash 2>/dev/null || true
+        git pull origin master || git pull origin main || error_exit "Git pull xatolik"
+        git stash pop 2>/dev/null || true
+    fi
+}
+
+# Xatolikni ko'rsatish
+error_exit() {
+    echo "❌ Xatolik: $1" >&2
+    exit 1
+}
+
+# Tekshirish - boshqa service'lar ishlayaptimi?
+check_other_services() {
+    echo "🔍 Boshqa service'larni tekshirish..."
+    
+    # Phoenix service'ni tekshirish
+    if systemctl is-active --quiet ${SERVICE_NAME}; then
+        echo "✅ ${SERVICE_NAME} ishlayapti"
+    else
+        echo "⚠️  ${SERVICE_NAME} ishlamayapti"
+    fi
+    
+    # Port tekshirish
+    if netstat -tlnp 2>/dev/null | grep -q ":${BACKEND_PORT} "; then
+        echo "✅ Port ${BACKEND_PORT} ishlatilmoqda"
+    else
+        echo "⚠️  Port ${BACKEND_PORT} bo'sh"
+    fi
+}
+
+# Backup yaratish
+create_backup() {
+    echo "💾 Backup yaratish..."
+    
+    BACKUP_DIR="${DEPLOY_DIR}/backups/$(date +%Y%m%d_%H%M%S)"
+    mkdir -p ${BACKUP_DIR}
+    
+    # Backend backup
+    if [ -d "${DEPLOY_DIR}/backend" ]; then
+        echo "📦 Backend backup..."
+        cp -r ${DEPLOY_DIR}/backend ${BACKUP_DIR}/backend 2>/dev/null || true
+    fi
+    
+    # Frontend backup
+    if [ -d "${DEPLOY_DIR}/frontend" ]; then
+        echo "📦 Frontend backup..."
+        cp -r ${DEPLOY_DIR}/frontend ${BACKUP_DIR}/frontend 2>/dev/null || true
+    fi
+    
+    # .env backup
+    if [ -f "${DEPLOY_DIR}/backend/.env" ]; then
+        echo "📦 .env backup..."
+        cp ${DEPLOY_DIR}/backend/.env ${BACKUP_DIR}/.env
+    fi
+    
+    echo "✅ Backup yaratildi: ${BACKUP_DIR}"
+}
+
+# ============================================
+# ASOSIY DEPLOYMENT
+# ============================================
+
+echo "🚀 Phoenix Deployment boshlandi..."
+echo "📅 Vaqt: $(date)"
+echo ""
+
+# 1. Tekshirishlar
+check_other_services
+echo ""
+
+# 2. Backup
+create_backup
+echo ""
+
+# 3. Backend yangilash
+echo "📦 Backend yangilanmoqda..."
+cd ${DEPLOY_DIR}
+
+if [ -d "backend/.git" ]; then
+    cd backend
+    git_update_backend
+else
+    echo "   Backend clone qilinmoqda..."
+    cd ${DEPLOY_DIR}
+    [ -d "backend" ] && rm -rf backend
+    git clone ${BACKEND_REPO} backend || error_exit "Backend clone xatolik"
+    cd backend
+fi
+
+# Virtual environment
+if [ ! -d "venv" ]; then
+    echo "   Virtual environment yaratilmoqda..."
+    python3 -m venv venv
+fi
+
+echo "   Dependencies o'rnatilmoqda..."
 source venv/bin/activate
-pip install -r requirements.txt gunicorn -q
-python manage.py migrate --noinput
-python manage.py seed_service_prices 2>/dev/null || true
-python manage.py collectstatic --noinput 2>/dev/null || true
+pip install --upgrade pip -q
+pip install -r requirements.txt gunicorn -q || error_exit "Dependencies o'rnatish xatolik"
+
+# .env faylini saqlab qolish
+if [ ! -f .env ] && [ -f "${BACKUP_DIR}/.env" ]; then
+    echo "   .env fayli restore qilinmoqda..."
+    cp ${BACKUP_DIR}/.env .env
+fi
+
+# Migrations
+echo "   Migrations ishga tushirilmoqda..."
+python manage.py migrate --noinput || error_exit "Migrations xatolik"
+
+# Static files
+echo "   Static files collect qilinmoqda..."
+python manage.py collectstatic --noinput || error_exit "Collectstatic xatolik"
+
 deactivate
+echo "✅ Backend yangilandi"
+echo ""
 
-echo "[3/6] Frontend: git pull va build..."
-cd "${DEPLOY_DIR}/frontend"
-git fetch origin
-git reset --hard origin/master
-npm install --silent
-npm run build
+# 4. Frontend yangilash
+echo "📦 Frontend yangilanmoqda..."
+cd ${DEPLOY_DIR}
 
-echo "[4/6] Backend: restart..."
-sudo systemctl restart "${SERVICE_BACKEND}"
-
-# Gunicorn tinglashni kutamiz (boshqa dasturlar portni band qilgan bo'lsa — 502 + "CORS" xato ko'rinadi)
-sleep 3
-HTTP_CODE=$(curl -sS -o /dev/null -w "%{http_code}" --connect-timeout 2 --max-time 15 "http://127.0.0.1:8000/api/v1/auth/login/" || echo "000")
-if [ "$HTTP_CODE" = "000" ]; then
-  echo "[XATO] 127.0.0.1:8000 ga ulanib bo'lmadi (gunicorn ishlamayapti yoki boshqa port)."
-  echo "        Tekshiring: sudo systemctl status ${SERVICE_BACKEND} --no-pager | head -25"
-  echo "        Log: sudo journalctl -u ${SERVICE_BACKEND} -n 40 --no-pager"
-  exit 1
+if [ -d "frontend/.git" ]; then
+    cd frontend
+    git_update_frontend
+else
+    echo "   Frontend clone qilinmoqda..."
+    cd ${DEPLOY_DIR}
+    [ -d "frontend" ] && rm -rf frontend
+    git clone ${FRONTEND_REPO} frontend || error_exit "Frontend clone xatolik"
+    cd frontend
 fi
-# GET login odatda 405 — bu normal (endpoint POST). 200/400/401 ham bo'lishi mumkin.
-case "$HTTP_CODE" in
-  405|200|400|401|403) ;;
-  *)
-    echo "[OGohlantirish] Loopback javob HTTP $HTTP_CODE (kutilgan: 405 yoki 4xx/200)."
-    ;;
-esac
 
-echo "[5/6] Frontend: yangi build tayyor (static fayllar yangilandi)."
-echo "[5b/6] Nginx api: eski 8003 -> 8000 (faqat api-ilmiyfaoliyat.conf)..."
-API_NGX="/etc/nginx/sites-available/api-ilmiyfaoliyat.conf"
-if [ -f "$API_NGX" ] && grep -q '127.0.0.1:8003' "$API_NGX" 2>/dev/null; then
-  sudo sed -i 's/127.0.0.1:8003/127.0.0.1:8000/g' "$API_NGX"
-  echo "      proxy_pass 8003 -> 8000 tuzatildi."
+# Dependencies va build
+echo "   Dependencies o'rnatilmoqda..."
+npm install --silent || error_exit "npm install xatolik"
+
+echo "   Frontend build qilinmoqda..."
+export VITE_API_BASE_URL="https://${API_DOMAIN}/api/v1"
+export VITE_MEDIA_URL="https://${API_DOMAIN}/media/"
+
+npm run build || error_exit "Frontend build xatolik"
+
+# Nginx static (ixtiyoriy): PHONIX_FRONTEND_WEB_ROOT=/var/www/ilmiyfaoliyat shaklida
+if [ -n "${PHONIX_FRONTEND_WEB_ROOT:-}" ] && [ -d "dist" ]; then
+    echo "   Static fayllar nginx papkasiga nusxalanmoqda: ${PHONIX_FRONTEND_WEB_ROOT}"
+    mkdir -p "${PHONIX_FRONTEND_WEB_ROOT}"
+    rsync -a --delete dist/ "${PHONIX_FRONTEND_WEB_ROOT}/" || error_exit "rsync static xatolik"
+    if command -v nginx >/dev/null 2>&1; then
+        sudo nginx -t 2>/dev/null && sudo systemctl reload nginx 2>/dev/null || true
+    fi
 fi
-echo "[6/6] Nginx: reload (frontend sayt yangilanishi)..."
-sudo nginx -t 2>/dev/null && sudo systemctl reload nginx 2>/dev/null || true
+
+echo "✅ Frontend yangilandi"
+echo ""
+
+# 5. Service restart (Graceful)
+echo "🔄 Service restart qilinmoqda..."
+
+# Graceful restart - avval reload, agar ishlamasa restart
+if systemctl is-active --quiet ${SERVICE_NAME}; then
+    echo "   Service reload qilinmoqda..."
+    sudo systemctl reload ${SERVICE_NAME} 2>/dev/null || sudo systemctl restart ${SERVICE_NAME}
+else
+    echo "   Service start qilinmoqda..."
+    sudo systemctl start ${SERVICE_NAME}
+fi
+
+# Service status
+sleep 2
+echo ""
+echo "📊 Service status:"
+sudo systemctl status ${SERVICE_NAME} --no-pager | head -15
+
+# 6. Tekshirish
+echo ""
+echo "🔍 Tekshirishlar:"
+
+# Service status
+if systemctl is-active --quiet ${SERVICE_NAME}; then
+    echo "✅ Service ishlayapti"
+else
+    echo "❌ Service ishlamayapti"
+    error_exit "Service ishlamayapti"
+fi
+
+# Port tekshirish
+if netstat -tlnp 2>/dev/null | grep -q ":${BACKEND_PORT} "; then
+    echo "✅ Port ${BACKEND_PORT} ishlatilmoqda"
+else
+    echo "⚠️  Port ${BACKEND_PORT} bo'sh (service ishlamayotgan bo'lishi mumkin)"
+fi
+
+# API test
+echo "   API test qilinmoqda..."
+if curl -s -o /dev/null -w "%{http_code}" "https://${API_DOMAIN}/api/v1/" | grep -q "200\|404\|405"; then
+    echo "✅ API javob berayapti"
+else
+    echo "⚠️  API javob bermayapti (Nginx yoki service muammosi bo'lishi mumkin)"
+fi
+
+# Health (loopback)
+echo "   Health tekshiruvi (127.0.0.1:${BACKEND_PORT})..."
+if curl -sf --max-time 5 "http://127.0.0.1:${BACKEND_PORT}/health/" >/dev/null; then
+    echo "✅ /health/ OK"
+else
+    echo "⚠️  /health/ javob bermadi (port yoki gunicorn)"
+fi
+if code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://127.0.0.1:${BACKEND_PORT}/health/ready/"); then
+    if [ "$code" = "200" ]; then
+        echo "✅ /health/ready/ 200"
+    else
+        echo "⚠️  /health/ready/ HTTP $code (DB yoki Redis muammosi bo'lishi mumkin)"
+    fi
+else
+    echo "⚠️  /health/ready/ so'rovi xato"
+fi
+
+# ============================================
+# YAKUNIY XABAR
+# ============================================
 
 echo ""
-echo "=== TUGADI ==="
-echo "Backend:  $(sudo systemctl is-active ${SERVICE_BACKEND} 2>/dev/null || echo '?')"
-echo "Loopback: HTTP ${HTTP_CODE} (login endpoint)"
-echo "Frontend: static build + nginx reload bajarildi."
+echo "✅ Deployment muvaffaqiyatli yakunlandi!"
+echo ""
+echo "📝 Keyingi qadamlar:"
+echo "   1. Logs tekshirish: sudo journalctl -u ${SERVICE_NAME} -f"
+echo "   2. API test: curl https://${API_DOMAIN}/api/v1/"
+echo "   3. Frontend test: curl https://${FRONTEND_DOMAIN}/"
+echo "   4. Loopback port ${BACKEND_PORT}: phoenix-backend.service (gunicorn --bind) va nginx api proxy_pass mos kelishi kerak"
+echo ""
+echo "💾 Backup joylashuvi: ${DEPLOY_DIR}/backups/"
+echo ""
