@@ -32,11 +32,18 @@ elif DEBUG:
 else:
     raise ImproperlyConfigured('SECRET_KEY must be set in the environment when DEBUG=False')
 
+# Productionda tez-tez: .env da faqat ilmiyfaoliyat.uz bo'lib, api.ilmiyfaoliyat.uz qolib ketadi → /admin da 400.
+_DEFAULT_ALLOWED_HOSTS = (
+    'api.ilmiyfaoliyat.uz,ilmiyfaoliyat.uz,www.ilmiyfaoliyat.uz,167.71.53.238,localhost,127.0.0.1'
+)
+_raw_allowed = (os.getenv('ALLOWED_HOSTS') or '').strip()
 ALLOWED_HOSTS = [
     h.strip()
-    for h in os.getenv('ALLOWED_HOSTS', 'api.ilmiyfaoliyat.uz,167.71.53.238,localhost,127.0.0.1').split(',')
+    for h in (_raw_allowed if _raw_allowed else _DEFAULT_ALLOWED_HOSTS).split(',')
     if h.strip()
 ]
+if not DEBUG and '*' not in ALLOWED_HOSTS and 'api.ilmiyfaoliyat.uz' not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append('api.ilmiyfaoliyat.uz')
 
 # Application definition
 INSTALLED_APPS = [
@@ -325,6 +332,7 @@ else:
     CSRF_TRUSTED_ORIGINS = [
         'https://ilmiyfaoliyat.uz',
         'https://www.ilmiyfaoliyat.uz',
+        'https://api.ilmiyfaoliyat.uz',
         'http://localhost:5173',
         'http://127.0.0.1:5173',
         'http://localhost:3000',
