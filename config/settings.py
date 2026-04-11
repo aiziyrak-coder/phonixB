@@ -32,17 +32,44 @@ elif DEBUG:
 else:
     raise ImproperlyConfigured('SECRET_KEY must be set in the environment when DEBUG=False')
 
-# Productionda tez-tez: .env da faqat ilmiyfaoliyat.uz bo'lib, api.ilmiyfaoliyat.uz qolib ketadi → /admin da 400.
+# Productionda tez-tez: .env da faqat ilmiyfaoliyat.uz bo'lib, api.ilmiyfaoliyat.uz qolib ketadi → 400 Bad Request.
 _DEFAULT_ALLOWED_HOSTS = (
     'api.ilmiyfaoliyat.uz,ilmiyfaoliyat.uz,www.ilmiyfaoliyat.uz,167.71.53.238,localhost,127.0.0.1'
 )
+
+
+def _normalize_allowed_host_entry(raw: str) -> str:
+    """.env da https://, bo'sh joy, port qo'shimchalari bo'lsa ham tozalaymiz."""
+    h = (raw or '').strip().strip('"').strip("'")
+    if not h:
+        return ''
+    h = h.lower()
+    if '://' in h:
+        h = h.split('://', 1)[1]
+    h = h.split('/')[0].split('@')[-1]
+    # domen:443 — Django ba'zan Host sarlavhasida port bilan tekshiradi
+    if h.count(':') == 1 and not h.startswith('['):
+        host_part, port_part = h.rsplit(':', 1)
+        if port_part.isdigit():
+            h = host_part
+    return h.strip()
+
+
 _raw_allowed = (os.getenv('ALLOWED_HOSTS') or '').strip()
-ALLOWED_HOSTS = [
-    h.strip()
-    for h in (_raw_allowed if _raw_allowed else _DEFAULT_ALLOWED_HOSTS).split(',')
-    if h.strip()
-]
-if not DEBUG and '*' not in ALLOWED_HOSTS and 'api.ilmiyfaoliyat.uz' not in ALLOWED_HOSTS:
+_base = _raw_allowed if _raw_allowed else _DEFAULT_ALLOWED_HOSTS
+ALLOWED_HOSTS = []
+for part in _base.split(','):
+    n = _normalize_allowed_host_entry(part)
+    if n and n not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(n)
+if not ALLOWED_HOSTS:
+    ALLOWED_HOSTS = [
+        _normalize_allowed_host_entry(p)
+        for p in _DEFAULT_ALLOWED_HOSTS.split(',')
+        if _normalize_allowed_host_entry(p)
+    ]
+# api subdomain har doim (DEBUG ham) — brauzer / nginx orqali kelganda 400 bo'lmasin
+if '*' not in ALLOWED_HOSTS and 'api.ilmiyfaoliyat.uz' not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append('api.ilmiyfaoliyat.uz')
 
 # Application definition
