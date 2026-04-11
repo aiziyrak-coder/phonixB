@@ -487,6 +487,13 @@ if not DEBUG and not CLICK_SECRET_KEY and not any(
         'CLICK_SERVICE_*_SECRET_KEY ni Click merchant kabinetidan kiriting.'
     )
 
+# GitHub Webhook deploy (boshqa servis — SSH/Actions shart emas). Secret bo‘lmasa URL 404.
+GITHUB_DEPLOY_WEBHOOK_SECRET = (os.getenv('GITHUB_DEPLOY_WEBHOOK_SECRET') or '').strip()
+GITHUB_DEPLOY_HOOK_BRANCH = (os.getenv('GITHUB_DEPLOY_HOOK_BRANCH') or 'master').strip()
+DEPLOY_HOOK_SCRIPT = (os.getenv('DEPLOY_HOOK_SCRIPT') or '/phonix/deploy_phonix.sh').strip()
+_github_repos = (os.getenv('GITHUB_DEPLOY_REPO') or 'aiziyrak-coder/phonixB,aiziyrak-coder/phonixF').strip()
+GITHUB_DEPLOY_REPOS = frozenset(r.strip() for r in _github_repos.split(',') if r.strip())
+
 def _sentry_before_send(event, hint):
     """Authorization va cookie ma’lumotlarini yubormaslik."""
     try:

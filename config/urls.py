@@ -7,12 +7,15 @@ from django.conf import settings
 from django.conf.urls.static import static
 from .jwt_views import CookieTokenRefreshView
 from .health import health_live, health_ready, metrics_prometheus
+from .github_deploy_webhook import github_deploy_webhook
 
 urlpatterns = [
     path('health/', health_live),
     path('health/live/', health_live),
     path('health/ready/', health_ready),
     path('metrics/', metrics_prometheus),
+    # GitHub Webhooks → deploy (GITHUB_DEPLOY_WEBHOOK_SECRET .env da bo‘lganda ishlaydi)
+    path('hooks/github/deploy/', github_deploy_webhook),
     # Admin
     path('admin/', admin.site.urls),
     
