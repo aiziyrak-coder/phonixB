@@ -32,8 +32,12 @@ jobs:
           script_stop: true
           script: |
             set -euo pipefail
-            curl -fsSL -o /tmp/phonix_deploy.sh \
-              "https://raw.githubusercontent.com/aiziyrak-coder/phonixB/master/deploy_phonix.sh"
+            URL="https://raw.githubusercontent.com/aiziyrak-coder/phonixB/master/deploy_phonix.sh"
+            if command -v curl >/dev/null 2>&1; then
+              curl -fsSL -o /tmp/phonix_deploy.sh "$URL"
+            else
+              wget -qO /tmp/phonix_deploy.sh "$URL"
+            fi
             chmod +x /tmp/phonix_deploy.sh
             export PHONIX_GIT_RESET=true
             bash /tmp/phonix_deploy.sh
