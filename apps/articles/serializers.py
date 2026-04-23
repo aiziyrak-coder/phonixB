@@ -5,6 +5,22 @@ from apps.users.serializers import UserSerializer
 from apps.journals.models import Journal
 
 
+def _normalize_journal_lookup_string(value: str) -> str:
+    """Unicode apostrof va variantlarini ASCII ga yaqinlashtirish (TA'LIM va DB mosligi)."""
+    return (
+        str(value)
+        .strip()
+        .replace('\u2019', "'")
+        .replace('\u2018', "'")
+        .replace('\u02bc', "'")
+        .replace('\u0060', "'")
+    )
+
+
+def _issn_alnum(value: str) -> str:
+    return ''.join(ch for ch in value if ch.isalnum())
+
+
 class JournalPKField(serializers.PrimaryKeyRelatedField):
     """Bo'sh journal ID FormData/JSON da Journal.objects.get(pk='') ORM xatosini oldini oladi."""
 
@@ -16,25 +32,59 @@ class JournalPKField(serializers.PrimaryKeyRelatedField):
     def to_internal_value(self, data):
         if data is None:
             self.fail('required')
-        s = str(data).strip()
-        if not s:
+        raw = str(data).strip()
+        if not raw:
             self.fail('blank_pk')
-        try:
-            return super().to_internal_value(s)
-        except serializers.ValidationError:
-            # Frontend ba'zan UUID o'rniga jurnal nomi yoki "__str__" ko'rinishini yuborishi mumkin.
-            # Masalan: "Jurnal nomi (1230-3494)". Shunda name/issn orqali fallback qilamiz.
-            by_name = Journal.objects.filter(name__iexact=s).first()
+        s = _normalize_journal_lookup_string(raw)
+        first_exc = None
+        for candidate in (s, raw):
+            try:
+                return super().to_internal_value(candidate)
+            except serializers.ValidationError as exc:
+                first_exc = exc
+                continue
+
+        # Frontend ba'zan UUID o'rniga jurnal nomi yoki "__str__" ko'rinishini yuborishi mumkin.
+        # Masalan: "Jurnal nomi (1230-3494)". ISSN bazada chiziqli/chiziqsiz farq qilishi mumkin.
+        for label in (s, raw):
+            by_name = Journal.objects.filter(name__iexact=label).first()
             if by_name:
                 return by_name
-            if s.endswith(')') and ' (' in s:
-                left, _, right = s.rpartition(' (')
-                issn = right[:-1].strip()
-                if left.strip() and issn:
-                    by_str = Journal.objects.filter(name__iexact=left.strip(), issn__iexact=issn).first()
-                    if by_str:
-                        return by_str
-            raise
+
+        display = s if (s.endswith(')') and ' (' in s) else None
+        if display is None and raw.endswith(')') and ' (' in raw:
+            display = raw
+        if display:
+            left, _, right = display.rpartition(' (')
+            issn_raw = right[:-1].strip()
+            name_part = left.strip()
+            if name_part and issn_raw:
+                issn_digits = _issn_alnum(issn_raw)
+                exact = Journal.objects.filter(name__iexact=name_part, issn__iexact=issn_raw).first()
+                if exact:
+                    return exact
+                only_name = Journal.objects.filter(name__iexact=name_part)
+                if only_name.count() == 1:
+                    return only_name.first()
+                cand = Journal.objects.filter(name__icontains=name_part[:120])
+                for j in cand:
+                    if _issn_alnum(j.issn) == issn_digits:
+                        return j
+                if issn_digits:
+                    found_j = None
+                    for j in Journal.objects.only('id', 'issn').iterator(chunk_size=200):
+                        if _issn_alnum(j.issn) != issn_digits:
+                            continue
+                        if found_j is not None:
+                            found_j = None
+                            break
+                        found_j = j
+                    if found_j is not None:
+                        return found_j
+
+        if first_exc:
+            raise first_exc
+        raise serializers.ValidationError('Jurnal identifikatori noto\'g\'ri yoki jurnal topilmadi.')
 
 
 class ArticleVersionSerializer(serializers.ModelSerializer):

@@ -30,7 +30,7 @@ from apps.payments.models import Transaction
 from apps.journals.models import Journal
 from django.conf import settings
 from django.utils import timezone
-from apps.services import get_gemini_service, extract_plain_text_from_file
+from apps.services import get_gemini_service
 from config.throttles import PlagiarismActionThrottle
 import logging
 import os
@@ -193,60 +193,10 @@ class ArticleViewSet(viewsets.ModelViewSet):
             )
             return Response({'detail': detail}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    def perform_create(self, serializer):
-        article = serializer.save()
-        self._run_initial_plagiarism_check(article)
+    # Maqola yaratilishi bilan avtomatik antiplagiat tekshiruvi O'CHIRILGAN:
+    # bepul Gemini chaqiruqlariga yo'l qo'ymaslik va mustaqil (to'langan) tekshiruv bilan farqni saqlash.
+    # Tekshiruv faqat check_plagiarism action yoki boshqa rasmiy jarayon orqali amalga oshiriladi.
 
-    def _run_initial_plagiarism_check(self, article):
-        """Run advanced plagiarism/AI check right after article is created (best-effort)."""
-        if not article.final_pdf_path:
-            return
-
-        try:
-            gemini_service = get_gemini_service()
-
-            try:
-                file_path = article.final_pdf_path.path
-            except Exception:
-                file_path = os.path.join(settings.MEDIA_ROOT, str(article.final_pdf_path))
-
-            if not os.path.exists(file_path):
-                logger.warning(f"Plagiarism auto-check skipped: file not found at {file_path}")
-                return
-
-            text_content = extract_plain_text_from_file(file_path)
-            if not text_content or len(text_content.strip()) < 50:
-                text_content = article.abstract or article.title or ""
-
-            if not text_content or len(text_content.strip()) < 50:
-                logger.warning(f"Plagiarism auto-check skipped: insufficient text for article {article.id}")
-                return
-
-            result = gemini_service.check_plagiarism(text_content)
-            plagiarism_percentage = result.get('plagiarism_percentage', 0)
-            ai_content_percentage = result.get('ai_content_percentage', 0)
-            originality = result.get('originality', max(0, 100 - plagiarism_percentage))
-            report = result.get('report', {})
-
-            article.plagiarism_percentage = plagiarism_percentage
-            article.ai_content_percentage = ai_content_percentage
-            article.originality_percentage = originality
-            article.plagiarism_checked_at = timezone.now()
-            article.plagiarism_report = report
-            article.save(update_fields=[
-                'plagiarism_percentage', 'ai_content_percentage', 'originality_percentage',
-                'plagiarism_checked_at', 'plagiarism_report'
-            ])
-
-            ActivityLog.objects.create(
-                article=article,
-                user=self.request.user,
-                action='Plagiarism check completed',
-                details=f'Plagiarism: {plagiarism_percentage}%, AI Content: {ai_content_percentage}%'
-            )
-        except Exception as e:
-            logger.error(f"Auto plagiarism check failed for article {article.id}: {str(e)}", exc_info=True)
-    
     @action(detail=True, methods=['post'])
     def increment_views(self, request, pk=None):
         """Increment article views"""

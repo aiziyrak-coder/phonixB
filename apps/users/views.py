@@ -199,6 +199,56 @@ class UserViewSet(viewsets.ModelViewSet):
         except Exception:
             pass
 
+        # 2c. UDK so'rovi (alohida buyurtma: to'lov → taqrizchi). Oldin faqat UDKCertificate qo'shilardi —
+        # sertifikat taqrizchi yakunlaganda yaratiladi, shuning uchun "to'lov bo'ldi, arxiv bo'sh" muammosi bo'lardi.
+        try:
+            from apps.udc.models import (
+                UdkRequest,
+                UDK_REQUEST_STATUS_PENDING_PAYMENT,
+                UDK_REQUEST_STATUS_SUBMITTED,
+                UDK_REQUEST_STATUS_COMPLETED,
+                UDK_REQUEST_STATUS_REJECTED,
+            )
+
+            for req in (
+                UdkRequest.objects.filter(user=user)
+                .exclude(status=UDK_REQUEST_STATUS_REJECTED)
+                .order_by('-created_at')
+            ):
+                cert = None
+                if getattr(req, 'transaction_id', None):
+                    cert = UDKCertificate.objects.filter(transaction_id=req.transaction_id).first()
+                if req.status == UDK_REQUEST_STATUS_COMPLETED and cert and cert.certificate_path:
+                    continue
+
+                title_short = (req.title or '')[:200]
+                date_str = req.created_at.isoformat() if req.created_at else None
+                status_label = {
+                    UDK_REQUEST_STATUS_PENDING_PAYMENT: "UDK buyurtmasi — to'lov kutilmoqda",
+                    UDK_REQUEST_STATUS_SUBMITTED: "UDK buyurtmasi — taqrizchida",
+                    UDK_REQUEST_STATUS_COMPLETED: "UDK buyurtmasi — yakunlangan (PDF kutilmoqda)",
+                }.get(req.status, "UDK buyurtmasi")
+
+                dl = None
+                if cert and cert.certificate_path:
+                    dl = f"{api_base}/udc/certificates/{cert.id}/download/"
+
+                items.append({
+                    'type': 'udk_request_order',
+                    'id': f"udkreq-{req.id}",
+                    'title': title_short,
+                    'label': status_label,
+                    'date': date_str,
+                    'download_url': dl,
+                    'view_url': '/udk-olish',
+                    'extra': {
+                        'status': req.status,
+                        'udk_code': (req.udk_code or '')[:120],
+                    },
+                })
+        except Exception:
+            pass
+
         # 2b. DOI so'rovlari (tugallangan — muallif o'z DOI linkini ko'radi)
         try:
             from apps.articles.models import DoiRequest
