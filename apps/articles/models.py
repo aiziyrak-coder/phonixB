@@ -38,6 +38,11 @@ class Article(models.Model):
     keywords = models.JSONField(default=list)
     status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='Draft')
     author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='articles')
+    co_authors = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        related_name='coauthored_articles',
+        blank=True,
+    )
     journal = models.ForeignKey('journals.Journal', on_delete=models.CASCADE, related_name='articles')
     issue = models.ForeignKey('journals.Issue', on_delete=models.SET_NULL, null=True, blank=True, related_name='articles')
     doi = models.CharField(max_length=100, blank=True)

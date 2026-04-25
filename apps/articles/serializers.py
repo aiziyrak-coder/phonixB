@@ -2,6 +2,7 @@ import json
 from rest_framework import serializers
 from .models import Article, ArticleVersion, ActivityLog, DoiRequest, ArticleSampleRequest, ArticleOperatorMessage
 from apps.users.serializers import UserSerializer
+from apps.users.models import User
 from apps.journals.models import Journal
 
 
@@ -377,11 +378,17 @@ class ArticleSerializer(serializers.ModelSerializer):
 
 class CreateArticleSerializer(serializers.ModelSerializer):
     journal = JournalPKField(queryset=Journal.objects.all())
+    co_author_contacts = serializers.ListField(
+        child=serializers.DictField(),
+        required=False,
+        allow_empty=True,
+        write_only=True,
+    )
 
     class Meta:
         model = Article
         fields = ('id', 'title', 'abstract', 'keywords', 'journal', 'final_pdf_path',
-                  'additional_document_path', 'page_count', 'fast_track')
+                  'additional_document_path', 'page_count', 'fast_track', 'co_author_contacts')
         read_only_fields = ('id',)
         extra_kwargs = {
             'abstract': {'required': False, 'allow_blank': True},
@@ -426,7 +433,59 @@ class CreateArticleSerializer(serializers.ModelSerializer):
                 break
         return title
 
+    def validate_co_author_contacts(self, value):
+        if value in (None, ''):
+            return []
+        if not isinstance(value, list):
+            raise serializers.ValidationError('Hammualliflar ro\'yxat ko\'rinishida yuborilishi kerak.')
+        normalized = []
+        for row in value:
+            if not isinstance(row, dict):
+                continue
+            identifier = str(row.get('identifier') or row.get('id') or '').strip()
+            email = str(row.get('email') or '').strip().lower()
+            phone = str(row.get('phone') or '').strip()
+            name = str(row.get('name') or '').strip()
+            if not any([identifier, email, phone]):
+                continue
+            normalized.append({
+                'identifier': identifier,
+                'email': email,
+                'phone': phone,
+                'name': name,
+            })
+        return normalized
+
+    def _resolve_co_author_user(self, entry):
+        identifier = entry.get('identifier', '')
+        email = entry.get('email', '')
+        phone = entry.get('phone', '')
+
+        if identifier:
+            user_by_id = User.objects.filter(id=identifier).first()
+            if user_by_id:
+                return user_by_id
+            if '@' in identifier:
+                user_by_email = User.objects.filter(email__iexact=identifier).first()
+                if user_by_email:
+                    return user_by_email
+            user_by_phone = User.objects.filter(phone=identifier).first()
+            if user_by_phone:
+                return user_by_phone
+
+        if email:
+            user_by_email = User.objects.filter(email__iexact=email).first()
+            if user_by_email:
+                return user_by_email
+
+        if phone:
+            user_by_phone = User.objects.filter(phone=phone).first()
+            if user_by_phone:
+                return user_by_phone
+        return None
+
     def create(self, validated_data):
+        co_author_contacts = validated_data.pop('co_author_contacts', [])
         validated_data['author'] = self.context['request'].user
         title = (validated_data.get('title') or '').strip()
         keywords = validated_data.get('keywords') or []
@@ -435,7 +494,17 @@ class CreateArticleSerializer(serializers.ModelSerializer):
         )
         # Mustaqil antiplagiat: Draft — keyin to'lov (language_editing) va tekshiruv; jurnal topshirig'i Yangi
         validated_data['status'] = 'Draft' if is_antiplagiat else 'Yangi'
-        return super().create(validated_data)
+        article = super().create(validated_data)
+
+        owner_id = str(self.context['request'].user.id)
+        co_author_ids = set()
+        for entry in co_author_contacts:
+            co_author = self._resolve_co_author_user(entry)
+            if co_author and str(co_author.id) != owner_id:
+                co_author_ids.add(str(co_author.id))
+        if co_author_ids:
+            article.co_authors.set(User.objects.filter(id__in=list(co_author_ids)))
+        return article
 
 
 class PublicArticleShareSerializer(serializers.ModelSerializer):

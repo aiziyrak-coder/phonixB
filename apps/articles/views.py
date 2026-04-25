@@ -1,4 +1,4 @@
-from django.db.models import Max
+from django.db.models import Max, Q
 from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
@@ -109,7 +109,7 @@ class ArticleViewSet(viewsets.ModelViewSet):
         base_queryset = Article.objects.select_related(
             'author', 'journal', 'published_by'
         ).prefetch_related(
-            'versions', 'activity_logs', 'peer_reviews'
+            'versions', 'activity_logs', 'peer_reviews', 'co_authors'
         )
         role = getattr(self.request.user, 'role', None) or 'author'
         if isinstance(role, str):
@@ -119,7 +119,9 @@ class ArticleViewSet(viewsets.ModelViewSet):
         elif role == 'journal_admin':
             return base_queryset.filter(journal__journal_admin=self.request.user)
         elif role == 'author':
-            return base_queryset.filter(author=self.request.user)
+            return base_queryset.filter(
+                Q(author=self.request.user) | Q(co_authors=self.request.user)
+            ).distinct()
         elif role == 'reviewer':
             # Taqrizchi: taqriz bosqichidagi maqolalar (frontend ham shu statusni filtrlaydi)
             return base_queryset.filter(status='QabulQilingan')
