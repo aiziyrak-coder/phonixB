@@ -253,22 +253,30 @@ class UserViewSet(viewsets.ModelViewSet):
         except Exception:
             pass
 
-        # 2b. DOI so'rovlari (tugallangan — muallif o'z DOI linkini ko'radi)
+        # 2b. DOI so'rovlari (muallif doim holatini ko'rsin; link bo'lsa ochadi)
         try:
             from apps.articles.models import DoiRequest
-            doi_requests = DoiRequest.objects.filter(user=user, status='completed').order_by('-completed_at')
+            doi_requests = DoiRequest.objects.filter(user=user).order_by('-created_at')
             for dr in doi_requests:
-                if dr.doi_link:
-                    items.append({
-                        'type': 'doi_link',
-                        'id': f"doi-{dr.id}",
-                        'title': f"DOI — {dr.author_last_name} {dr.author_first_name}",
-                        'label': "DOI raqami",
-                        'date': dr.completed_at.isoformat() if dr.completed_at else None,
-                        'download_url': None,
-                        'view_url': dr.doi_link,
-                        'extra': {'doi_link': dr.doi_link},
-                    })
+                status_label = {
+                    'pending_payment': "DOI — to'lov kutilmoqda",
+                    'submitted': "DOI — taqrizchida",
+                    'completed': "DOI raqami tayyor",
+                }.get(dr.status, "DOI so'rovi")
+                has_link = bool((dr.doi_link or '').strip())
+                items.append({
+                    'type': 'doi_link',
+                    'id': f"doi-{dr.id}",
+                    'title': f"DOI — {dr.author_last_name} {dr.author_first_name}",
+                    'label': "DOI raqami" if has_link else status_label,
+                    'date': (
+                        dr.completed_at.isoformat() if dr.completed_at else
+                        (dr.created_at.isoformat() if dr.created_at else None)
+                    ),
+                    'download_url': None,
+                    'view_url': dr.doi_link if has_link else '/doi-olish',
+                    'extra': {'doi_link': dr.doi_link, 'status': dr.status},
+                })
         except Exception:
             pass
 
