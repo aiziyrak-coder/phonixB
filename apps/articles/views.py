@@ -101,20 +101,61 @@ class ArticleViewSet(viewsets.ModelViewSet):
                 {'detail': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-    
-    def get_queryset(self):
-        # Optimize queries with select_related and prefetch_related
-        # journal__journal_admin ba'zi DB/ORM versiyalarida JoinInfo/UUID join xatosiga olib kelishi mumkin;
-        # ro'yxat serializerlari journal_admin obyektini talab qilmaydi.
-        base_queryset = Article.objects.select_related(
-            'author', 'journal', 'published_by'
-        ).prefetch_related(
-            'versions', 'activity_logs', 'peer_reviews', 'co_authors'
+
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated], url_path='mine')
+    def mine(self, request):
+        """
+        Muallifning barcha maqolalari (Draft, Yangi, ...) — paginatsiyasiz, barqaror ro'yxat.
+        """
+        qs = (
+            Article.objects.filter(
+                Q(author=request.user) | Q(co_authors=request.user)
+            )
+            .select_related('author', 'journal')
+            .distinct()
+            .order_by('-submission_date')
         )
+        serializer = ArticleListSerializer(qs, many=True, context=self.get_serializer_context())
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated], url_path='staff')
+    def staff(self, request):
+        """
+        Bosh admin / jurnal admin / operator: tegishli barcha maqolalar (Draft ham),
+        paginatsiyasiz.
+        """
+        role = self._user_role()
+        if role not in self._staff_list_roles() and not getattr(request.user, 'is_superuser', False):
+            return Response({'detail': 'Ruxsat yo\'q.'}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            qs = self.get_queryset().order_by('-submission_date')
+            serializer = ArticleListSerializer(qs, many=True, context=self.get_serializer_context())
+            return Response(serializer.data)
+        except Exception as e:
+            logger.exception('Article staff list failed: %s', e)
+            return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def _user_role(self):
         role = getattr(self.request.user, 'role', None) or 'author'
         if isinstance(role, str):
-            role = role.strip().lower()
-        if role == 'super_admin':
+            return role.strip().lower()
+        return role
+
+    def _staff_list_roles(self):
+        return frozenset({'super_admin', 'journal_admin', 'operator', 'accountant'})
+
+    def get_queryset(self):
+        # Ro'yxat: og'ir prefetchsiz — ba'zi maqolalarda 500 va bo'sh ro'yxat muammosini oldini oladi.
+        if getattr(self, 'action', None) in ('list', 'mine', 'staff'):
+            base_queryset = Article.objects.select_related('author', 'journal', 'published_by')
+        else:
+            base_queryset = Article.objects.select_related(
+                'author', 'journal', 'published_by'
+            ).prefetch_related(
+                'versions', 'activity_logs', 'peer_reviews', 'co_authors'
+            )
+        role = self._user_role()
+        if role == 'super_admin' or getattr(self.request.user, 'is_superuser', False):
             return base_queryset.all()
         elif role == 'journal_admin':
             return base_queryset.filter(journal__journal_admin=self.request.user)
@@ -123,12 +164,15 @@ class ArticleViewSet(viewsets.ModelViewSet):
                 Q(author=self.request.user) | Q(co_authors=self.request.user)
             ).distinct()
         elif role == 'reviewer':
-            # Taqrizchi: taqriz bosqichidagi maqolalar (frontend ham shu statusni filtrlaydi)
             return base_queryset.filter(status='QabulQilingan')
         elif role == 'operator':
-            # Operator: muallif bilan maqola bo‘yicha chat va yordam
             return base_queryset.all()
-        return Article.objects.none()
+        elif role == 'accountant':
+            return base_queryset.all()
+        # Noma'lum rol: kamida o'z maqolalarini ko'rsat (bo'sh ro'yxat oldini olish)
+        return base_queryset.filter(
+            Q(author=self.request.user) | Q(co_authors=self.request.user)
+        ).distinct()
     
     def get_serializer_class(self):
         if self.action == 'create':
@@ -137,11 +181,56 @@ class ArticleViewSet(viewsets.ModelViewSet):
             return ArticleListSerializer
         return ArticleSerializer
 
-    def create(self, request, *args, **kwargs):
-        """For pre-payment journals, require a completed publication_fee transaction before creating article."""
-        awaiting_payment = str(request.data.get('awaiting_publication_payment', '')).lower() in (
+    def _journal_has_publication_fee(self, journal) -> bool:
+        if journal is None:
+            return False
+        try:
+            pub = float(journal.publication_fee or 0)
+            per = float(journal.price_per_page or 0)
+            return pub > 0 or per > 0
+        except (TypeError, ValueError):
+            return False
+
+    def _resolve_awaiting_publication_payment(self, request, journal=None):
+        """
+        Oldindan to'lovli jurnalda to'lov tugamaguncha Draft yaratish.
+        Frontend flag yubormasa ham (eski build) avtomatik yoqiladi.
+        """
+        explicit = str(request.data.get('awaiting_publication_payment', '')).lower() in (
             '1', 'true', 'yes',
         )
+        if explicit:
+            return True
+
+        tx_id = request.data.get('payment_transaction_id')
+        if tx_id:
+            try:
+                tx = Transaction.objects.get(id=tx_id)
+                if (
+                    str(tx.user_id) == str(request.user.id)
+                    and tx.service_type == 'publication_fee'
+                    and tx.status == 'completed'
+                ):
+                    return False
+            except (Transaction.DoesNotExist, ValueError, TypeError):
+                pass
+
+        if journal is None:
+            journal_raw = request.data.get('journal')
+            if not journal_raw:
+                return False
+            try:
+                journal = Journal.objects.get(pk=journal_raw)
+            except (Journal.DoesNotExist, ValueError, TypeError):
+                return False
+
+        if getattr(journal, 'payment_model', None) == 'pre-payment' and self._journal_has_publication_fee(journal):
+            return True
+        return False
+
+    def create(self, request, *args, **kwargs):
+        """For pre-payment journals, require a completed publication_fee transaction before creating article."""
+        awaiting_payment = self._resolve_awaiting_publication_payment(request)
         serializer = self.get_serializer(
             data=request.data,
             context={
@@ -204,6 +293,12 @@ class ArticleViewSet(viewsets.ModelViewSet):
                             tx.save(update_fields=['article'])
                 except (Transaction.DoesNotExist, ValueError, TypeError):
                     pass
+            if article and awaiting_payment and article.status == 'Draft' and not is_antiplagiat_flow:
+                try:
+                    from .submission_notifications import notify_article_draft_pending_payment
+                    notify_article_draft_pending_payment(article)
+                except Exception as notify_err:
+                    logger.warning('Article draft notify failed: %s', notify_err)
             if article and article.status == 'Yangi' and not is_antiplagiat_flow:
                 try:
                     from .submission_notifications import notify_article_submitted

@@ -116,6 +116,7 @@ class ArticleListSerializer(serializers.ModelSerializer):
     journal_name = serializers.SerializerMethodField()
     publication_link = serializers.SerializerMethodField()
     certificate_download_link = serializers.SerializerMethodField()
+    pending_payment_transaction_id = serializers.SerializerMethodField()
 
     class Meta:
         model = Article
@@ -125,6 +126,7 @@ class ArticleListSerializer(serializers.ModelSerializer):
             'downloads_count', 'citations_count', 'page_count', 'fast_track',
             'plagiarism_percentage', 'ai_content_percentage', 'originality_percentage', 'plagiarism_checked_at',
             'publication_url', 'publication_link', 'certificate_download_link',
+            'pending_payment_transaction_id',
         )
 
     def get_author_name(self, obj):
@@ -167,6 +169,25 @@ class ArticleListSerializer(serializers.ModelSerializer):
         if getattr(obj, 'certificate_url', None) and obj.certificate_url:
             return self._build_absolute_url_list(obj.certificate_url)
         return ''
+
+    def get_pending_payment_transaction_id(self, obj):
+        """Muallif: to'lov kutilayotgan Draft uchun Click sahifasiga qaytish."""
+        if getattr(obj, 'status', None) != 'Draft':
+            return None
+        try:
+            from apps.payments.models import Transaction
+            tx = (
+                Transaction.objects.filter(
+                    article_id=obj.pk,
+                    service_type='publication_fee',
+                    status='pending',
+                )
+                .order_by('-created_at')
+                .first()
+            )
+            return str(tx.id) if tx else None
+        except Exception:
+            return None
 
 
 class ArticleSerializer(serializers.ModelSerializer):

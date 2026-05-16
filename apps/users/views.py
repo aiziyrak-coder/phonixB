@@ -375,7 +375,7 @@ class UserViewSet(viewsets.ModelViewSet):
         # Get article statistics (optimized with single query)
         article_stats = Article.objects.aggregate(
             total=Count('id'),
-            new_submissions=Count('id', filter=Q(status__in=['Yangi', 'WithEditor'])),
+            new_submissions=Count('id', filter=Q(status__in=['Yangi', 'WithEditor', 'Draft'])),
             in_review=Count('id', filter=Q(status='QabulQilingan')),
             published=Count('id', filter=Q(status='Published')),
             rejected=Count('id', filter=Q(status='Rejected'))
