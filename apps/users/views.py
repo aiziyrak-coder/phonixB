@@ -147,12 +147,27 @@ class UserViewSet(viewsets.ModelViewSet):
             date_str = art.submission_date.isoformat() if art.submission_date else None
             article_view_url = f"/articles/{art.id}"
             pdf_url = file_url(art.final_pdf_path) if art.final_pdf_path else None
+            pending_pub_fee = Transaction.objects.filter(
+                article_id=art.id,
+                service_type='publication_fee',
+                status='pending',
+            ).exists()
+            if art.status == 'Draft' and pending_pub_fee:
+                status_label = "Maqola yuborish — to'lov kutilmoqda"
+            elif art.status in ('Yangi', 'WithEditor', 'QabulQilingan', 'PlagiarismReview'):
+                status_label = 'Maqola yuborish — taqrizchida'
+            elif art.status == 'Published':
+                status_label = 'Maqola nashr etilgan'
+            elif pdf_url:
+                status_label = 'Maqola PDF'
+            else:
+                status_label = 'Maqola yuborildi'
             items.append({
                 'type': 'article_pdf',
                 'id': str(art.id),
                 'article_id': str(art.id),
                 'title': title,
-                'label': 'Maqola yuborildi' if not pdf_url else 'Maqola PDF',
+                'label': status_label,
                 'date': date_str,
                 'download_url': pdf_url,
                 'view_url': article_view_url,

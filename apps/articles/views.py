@@ -139,7 +139,16 @@ class ArticleViewSet(viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         """For pre-payment journals, require a completed publication_fee transaction before creating article."""
-        serializer = self.get_serializer(data=request.data)
+        awaiting_payment = str(request.data.get('awaiting_publication_payment', '')).lower() in (
+            '1', 'true', 'yes',
+        )
+        serializer = self.get_serializer(
+            data=request.data,
+            context={
+                **self.get_serializer_context(),
+                'awaiting_publication_payment': awaiting_payment,
+            },
+        )
         serializer.is_valid(raise_exception=True)
         journal_id = serializer.validated_data.get('journal')
         title_val = (serializer.validated_data.get('title') or '').strip()
@@ -157,7 +166,7 @@ class ArticleViewSet(viewsets.ModelViewSet):
                 # Mustaqil antiplagiat: to'lov alohida (language_editing); jurnal nashr oldindan to'lovini talab qilmaymiz
                 if is_antiplagiat_flow:
                     pass
-                elif journal.payment_model == 'pre-payment' and has_fee:
+                elif journal.payment_model == 'pre-payment' and has_fee and not awaiting_payment:
                     tx_id = request.data.get('payment_transaction_id')
                     if not tx_id:
                         return Response(
@@ -184,6 +193,23 @@ class ArticleViewSet(viewsets.ModelViewSet):
                 pass
         try:
             self.perform_create(serializer)
+            article = serializer.instance
+            tx_id = request.data.get('payment_transaction_id')
+            if tx_id and article:
+                try:
+                    tx = Transaction.objects.get(id=tx_id)
+                    if str(tx.user_id) == str(request.user.id) and tx.status == 'completed':
+                        if not tx.article_id:
+                            tx.article = article
+                            tx.save(update_fields=['article'])
+                except (Transaction.DoesNotExist, ValueError, TypeError):
+                    pass
+            if article and article.status == 'Yangi' and not is_antiplagiat_flow:
+                try:
+                    from .submission_notifications import notify_article_submitted
+                    notify_article_submitted(article)
+                except Exception as notify_err:
+                    logger.warning('Article submit notify failed: %s', notify_err)
             headers = self.get_success_headers(serializer.data)
             return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
         except Exception as e:

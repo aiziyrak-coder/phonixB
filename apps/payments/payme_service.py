@@ -272,6 +272,12 @@ class PaymeService:
                 fulfill_language_editing_payment(transaction)
             except Exception as e:
                 logger.error(f"Payme: antiplagiat/language_editing fulfill failed: {e}", exc_info=True)
+        elif service_type == 'publication_fee':
+            try:
+                from apps.articles.fulfill_publication_fee import fulfill_publication_fee
+                fulfill_publication_fee(transaction)
+            except Exception as e:
+                logger.error(f"Payme: publication_fee fulfill failed: {e}", exc_info=True)
         
         logger.info(f"Payme transaction performed: {payme_trans_id} for {transaction.id}")
         

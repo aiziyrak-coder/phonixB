@@ -955,6 +955,13 @@ class ClickPaymentService:
                     fulfill_language_editing_payment(transaction)
                 except Exception as e:
                     logger.error(f"Language editing / antiplagiat fulfill failed: {e}", exc_info=True)
+
+            if error_int == 0 and getattr(transaction, 'service_type', None) == 'publication_fee':
+                try:
+                    from apps.articles.fulfill_publication_fee import fulfill_publication_fee
+                    fulfill_publication_fee(transaction)
+                except Exception as e:
+                    logger.error(f"Publication fee fulfill failed: {e}", exc_info=True)
             
             return {
                 'click_trans_id': click_trans_id,

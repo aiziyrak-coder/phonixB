@@ -493,7 +493,10 @@ class CreateArticleSerializer(serializers.ModelSerializer):
             str(k).lower() == 'plagiarism' for k in keywords
         )
         # Mustaqil antiplagiat: Draft — keyin to'lov (language_editing) va tekshiruv; jurnal topshirig'i Yangi
-        validated_data['status'] = 'Draft' if is_antiplagiat else 'Yangi'
+        if self.context.get('awaiting_publication_payment'):
+            validated_data['status'] = 'Draft'
+        else:
+            validated_data['status'] = 'Draft' if is_antiplagiat else 'Yangi'
         article = super().create(validated_data)
 
         owner_id = str(self.context['request'].user.id)
