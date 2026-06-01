@@ -50,6 +50,41 @@ def _find_transaction_by_merchant_trans_id(merchant_trans_id):
         return None
 
 
+def _fulfill_after_payment(transaction):
+    """Post-payment business logic (Click complete callback va sinxron tekshiruv)."""
+    service_type = getattr(transaction, 'service_type', None)
+    if service_type == 'udk_request':
+        try:
+            from apps.udc.fulfill import fulfill_udk_request
+            fulfill_udk_request(transaction)
+        except Exception as e:
+            logger.error('UDK fulfill failed: %s', e, exc_info=True)
+    if service_type == 'article_sample':
+        try:
+            from apps.articles.fulfill_sample import fulfill_article_sample
+            fulfill_article_sample(transaction)
+        except Exception as e:
+            logger.error('Article sample fulfill failed: %s', e, exc_info=True)
+    if service_type == 'doi_request':
+        try:
+            from apps.articles.fulfill_doi import fulfill_doi_request
+            fulfill_doi_request(transaction)
+        except Exception as e:
+            logger.error('DOI request fulfill failed: %s', e, exc_info=True)
+    if service_type == 'language_editing':
+        try:
+            from apps.articles.fulfill_plagiarism_payment import fulfill_language_editing_payment
+            fulfill_language_editing_payment(transaction)
+        except Exception as e:
+            logger.error('Language editing fulfill failed: %s', e, exc_info=True)
+    if service_type == 'publication_fee':
+        try:
+            from apps.articles.fulfill_publication_fee import fulfill_publication_fee
+            fulfill_publication_fee(transaction)
+        except Exception as e:
+            logger.error('Publication fee fulfill failed: %s', e, exc_info=True)
+
+
 class ClickPaymentService:
     """Service for Click payment integration"""
     
@@ -334,6 +369,121 @@ class ClickPaymentService:
         
         response = requests.get(url, headers=headers, timeout=_click_timeout())
         return response.json()
+
+    @staticmethod
+    def _click_payment_is_paid(result):
+        """Click Merchant API javobida to'lov tasdiqlanganini aniqlash."""
+        if not isinstance(result, dict):
+            return False
+        error_code = result.get('error_code')
+        if error_code is not None:
+            try:
+                if int(error_code) != 0:
+                    return False
+            except (TypeError, ValueError):
+                return False
+        payment_status = result.get('payment_status')
+        if payment_status is not None:
+            try:
+                return int(payment_status) == 2
+            except (TypeError, ValueError):
+                pass
+        status = result.get('status')
+        if isinstance(status, str) and status.lower() in ('paid', 'confirmed', 'completed', 'success'):
+            return True
+        if isinstance(status, int) and status == 2:
+            return True
+        return False
+
+    def sync_transaction_from_click(self, transaction):
+        """Click API orqali to'lov holatini tekshirib, DB ni yangilash (callback kelmasa ham)."""
+        from django.db import transaction as db_transaction
+
+        if transaction.status == 'completed':
+            return {
+                'error_code': 0,
+                'error_note': 'Already completed',
+                'payment_status': 2,
+                'synced': True,
+            }
+
+        service_id = str(getattr(transaction, 'click_service_id', None) or self.service_id).strip()
+        merchant_trans_id = str(transaction.merchant_trans_id or transaction.id)
+        click_result = None
+
+        if transaction.click_paydoc_id:
+            try:
+                click_result = self.check_payment_status(service_id, transaction.click_paydoc_id)
+            except Exception as e:
+                logger.warning('Click check_payment_status failed: %s', e)
+
+        if not self._click_payment_is_paid(click_result):
+            created = transaction.created_at or timezone.now()
+            dates_to_try = []
+            for fmt in ('%Y-%m-%d', '%d.%m.%Y'):
+                dates_to_try.append(timezone.localtime(created).strftime(fmt))
+            seen = set()
+            for date_str in dates_to_try:
+                if date_str in seen:
+                    continue
+                seen.add(date_str)
+                try:
+                    candidate = self.check_payment_status_by_mti(
+                        service_id, merchant_trans_id, date_str
+                    )
+                    click_result = candidate
+                    if self._click_payment_is_paid(candidate):
+                        break
+                except Exception as e:
+                    logger.warning('Click status_by_mti failed (%s): %s', date_str, e)
+
+        if not self._click_payment_is_paid(click_result):
+            note = (click_result or {}).get('error_note') or 'Payment not completed yet'
+            ec = (click_result or {}).get('error_code', -1)
+            return {
+                'error_code': ec,
+                'error_note': note,
+                'payment_status': 0,
+                'synced': False,
+            }
+
+        paydoc = (
+            click_result.get('payment_id')
+            or click_result.get('click_paydoc_id')
+            or click_result.get('paydoc_id')
+            or transaction.click_paydoc_id
+        )
+        click_trans = click_result.get('click_trans_id') or transaction.click_trans_id
+
+        with db_transaction.atomic():
+            locked = Transaction.objects.select_for_update().get(pk=transaction.pk)
+            if locked.status != 'completed':
+                locked.status = 'completed'
+                locked.completed_at = timezone.now()
+                if paydoc:
+                    locked.click_paydoc_id = str(paydoc)
+                if click_trans:
+                    locked.click_trans_id = str(click_trans)
+                locked.error_note = ''
+                locked.save(
+                    update_fields=[
+                        'status',
+                        'completed_at',
+                        'click_paydoc_id',
+                        'click_trans_id',
+                        'error_note',
+                    ]
+                )
+            transaction = locked
+
+        _fulfill_after_payment(transaction)
+
+        return {
+            'error_code': 0,
+            'error_note': 'Success',
+            'payment_status': 2,
+            'synced': True,
+        }
     
     def reverse_payment(self, service_id, payment_id):
         """Reverse (cancel) payment"""
@@ -928,40 +1078,8 @@ class ClickPaymentService:
                     'error_note': 'Success',
                 }
 
-            if error_int == 0 and getattr(transaction, 'service_type', None) == 'udk_request':
-                try:
-                    from apps.udc.fulfill import fulfill_udk_request
-                    fulfill_udk_request(transaction)
-                except Exception as e:
-                    logger.error(f"UDK fulfill failed: {e}", exc_info=True)
-
-            if error_int == 0 and getattr(transaction, 'service_type', None) == 'article_sample':
-                try:
-                    from apps.articles.fulfill_sample import fulfill_article_sample
-                    fulfill_article_sample(transaction)
-                except Exception as e:
-                    logger.error(f"Article sample fulfill failed: {e}", exc_info=True)
-
-            if error_int == 0 and getattr(transaction, 'service_type', None) == 'doi_request':
-                try:
-                    from apps.articles.fulfill_doi import fulfill_doi_request
-                    fulfill_doi_request(transaction)
-                except Exception as e:
-                    logger.error(f"DOI request fulfill failed: {e}", exc_info=True)
-
-            if error_int == 0 and getattr(transaction, 'service_type', None) == 'language_editing':
-                try:
-                    from apps.articles.fulfill_plagiarism_payment import fulfill_language_editing_payment
-                    fulfill_language_editing_payment(transaction)
-                except Exception as e:
-                    logger.error(f"Language editing / antiplagiat fulfill failed: {e}", exc_info=True)
-
-            if error_int == 0 and getattr(transaction, 'service_type', None) == 'publication_fee':
-                try:
-                    from apps.articles.fulfill_publication_fee import fulfill_publication_fee
-                    fulfill_publication_fee(transaction)
-                except Exception as e:
-                    logger.error(f"Publication fee fulfill failed: {e}", exc_info=True)
+            if error_int == 0:
+                _fulfill_after_payment(transaction)
             
             return {
                 'click_trans_id': click_trans_id,

@@ -121,6 +121,17 @@ class UserViewSet(viewsets.ModelViewSet):
         from apps.udc.models import UDKCertificate
 
         user = request.user
+
+        # To'lov tasdiqlangan, lekin maqola/DOI hali "kutilmoqda" — arxiv ochilganda tuzatish
+        try:
+            from apps.articles.fulfill_publication_fee import repair_publication_fee_articles_for_user
+            from apps.articles.fulfill_doi import repair_doi_requests_for_user
+            repair_publication_fee_articles_for_user(user)
+            repair_doi_requests_for_user(user)
+        except Exception as repair_err:
+            import logging
+            logging.getLogger(__name__).warning('Archive payment repair failed: %s', repair_err)
+
         items = []
         media_url = (getattr(settings, 'MEDIA_URL', '/media/') or '/media/').rstrip('/')
         base_url = request.build_absolute_uri('/').rstrip('/')
@@ -147,13 +158,20 @@ class UserViewSet(viewsets.ModelViewSet):
             date_str = art.submission_date.isoformat() if art.submission_date else None
             article_view_url = f"/articles/{art.id}"
             pdf_url = file_url(art.final_pdf_path) if art.final_pdf_path else None
+            completed_pub_fee = Transaction.objects.filter(
+                article_id=art.id,
+                service_type='publication_fee',
+                status='completed',
+            ).exists()
             pending_pub_fee = Transaction.objects.filter(
                 article_id=art.id,
                 service_type='publication_fee',
                 status='pending',
             ).exists()
-            if art.status == 'Draft' and pending_pub_fee:
+            if art.status == 'Draft' and pending_pub_fee and not completed_pub_fee:
                 status_label = "Maqola yuborish — to'lov kutilmoqda"
+            elif art.status == 'Draft' and completed_pub_fee:
+                status_label = 'Maqola yuborish — taqrizchida'
             elif art.status in ('Yangi', 'WithEditor', 'QabulQilingan', 'PlagiarismReview'):
                 status_label = 'Maqola yuborish — taqrizchida'
             elif art.status == 'Published':

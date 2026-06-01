@@ -74,17 +74,17 @@ class TransactionViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def check_status(self, request, pk=None):
-        """Check payment status"""
+        """Click API orqali to'lov holatini sinxronlash va tranzaksiyani qaytarish."""
         transaction = self.get_object()
         service = ClickPaymentService()
-        
-        if transaction.click_paydoc_id:
-            result = service.check_payment_status(service.service_id, transaction.click_paydoc_id)
-        else:
-            result = {'error': -1, 'error_note': 'Payment not completed yet'}
-        
-        logger.info(f"Check status result: {result}")
-        return Response(result)
+        result = service.sync_transaction_from_click(transaction)
+        transaction.refresh_from_db()
+        logger.info('Check/sync status result: %s', result)
+        full_serializer = TransactionSerializer(transaction, context=self.get_serializer_context())
+        return Response({
+            **result,
+            'transaction': full_serializer.data,
+        })
     
     @action(detail=True, methods=['post'])
     def process_payment(self, request, pk=None):

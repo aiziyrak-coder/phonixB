@@ -12,6 +12,8 @@ def fulfill_doi_request(transaction):
     """
     if getattr(transaction, 'service_type', None) != 'doi_request':
         return
+    if getattr(transaction, 'status', None) != 'completed':
+        return
     extra = getattr(transaction, 'extra_data', None) or {}
     doi_request_id = extra.get('doi_request_id')
     if not doi_request_id:
@@ -48,3 +50,16 @@ def fulfill_doi_request(transaction):
             )
     except Exception as e:
         logger.warning("DOI notify reviewers failed: %s", e)
+
+
+def repair_doi_requests_for_user(user):
+    """To'lov completed, lekin DoiRequest hali pending_payment — arxiv va sinxron tekshiruv."""
+    from apps.payments.models import Transaction
+
+    txs = Transaction.objects.filter(
+        user=user,
+        service_type='doi_request',
+        status='completed',
+    ).order_by('-completed_at', '-created_at')
+    for tx in txs:
+        fulfill_doi_request(tx)
