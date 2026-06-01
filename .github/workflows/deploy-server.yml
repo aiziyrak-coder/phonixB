@@ -1,4 +1,6 @@
-# Secrets (Settings → Actions): PHONIX_SSH_HOST, PHONIX_SSH_USER, PHONIX_SSH_PRIVATE_KEY
+# Secrets (Settings → Actions):
+#   PHONIX_SSH_HOST, PHONIX_SSH_USER
+#   va PHONIX_SSH_PRIVATE_KEY yoki PHONIX_SSH_PASSWORD
 # Push to master yoki Actions → Run workflow
 
 name: Deploy to server
@@ -23,6 +25,7 @@ jobs:
           host: ${{ secrets.PHONIX_SSH_HOST }}
           username: ${{ secrets.PHONIX_SSH_USER }}
           key: ${{ secrets.PHONIX_SSH_PRIVATE_KEY }}
+          password: ${{ secrets.PHONIX_SSH_PASSWORD }}
           port: 22
           command_timeout: 40m
           script_stop: true
