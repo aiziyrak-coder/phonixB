@@ -1,15 +1,11 @@
-# Bir marta GitHub → Settings → Secrets → Actions da qo‘ying:
-#   PHONIX_SSH_HOST      (masalan 167.71.53.238)
-#   PHONIX_SSH_USER      (masalan root)
-#   PHONIX_SSH_PRIVATE_KEY  (to‘liq private key matni, -----BEGIN ... -----END)
-# Port 22 dan farqli bo‘lsa, quyidagi `port:` qatorini tahrirlab push qiling.
-#
-# Ishga tushirish: Actions → "Deploy to server" → Run workflow
-# Boshqa workflowlarga ta‘sir qilmaydi (faqat workflow_dispatch).
+# Secrets (Settings → Actions): PHONIX_SSH_HOST, PHONIX_SSH_USER, PHONIX_SSH_PRIVATE_KEY
+# Push to master yoki Actions → Run workflow
 
 name: Deploy to server
 
 on:
+  push:
+    branches: [master]
   workflow_dispatch:
 
 concurrency:
@@ -21,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - name: SSH — yangilash va deploy
+      - name: SSH — pull, build, restart
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.PHONIX_SSH_HOST }}
@@ -40,4 +36,5 @@ jobs:
             fi
             chmod +x /tmp/phonix_deploy.sh
             export PHONIX_GIT_RESET=true
+            export PHONIX_FRONTEND_WEB_ROOT=/var/www/ilmiyfaoliyat
             bash /tmp/phonix_deploy.sh
